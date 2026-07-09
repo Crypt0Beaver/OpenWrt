@@ -28,17 +28,20 @@ jobs:
     steps:
     - name: Check Server Performance(检查服务器性能)
       run: |
-        echo "警告⚠"
-        echo "分配的服务器性能有限，若选择的插件过多，务必注意CPU性能！"
-        echo -e "已知CPU型号（降序）：7763，8370C，8272CL，8171M，E5-2673 \n"
-        echo "--------------------------CPU信息--------------------------"
-        echo "CPU物理数量：$(cat /proc/cpuinfo | grep "physical id" | sort | uniq | wc -l)"
-        echo -e "CPU核心信息：$(cat /proc/cpuinfo | grep name | cut -f2 -d: | uniq -c) \n"
-        echo "--------------------------内存信息--------------------------"
-        echo "已安装内存详细信息："
-        echo -e "$(sudo lshw -short -C memory | grep GiB) \n"
-        echo "--------------------------硬盘信息--------------------------"
-        echo "硬盘数量：$(ls /dev/sd* | grep -v [1-9] | wc -l)" && df -hT
+        echo "Warning ⚠"
+        echo "The allocated runner has limited performance. If you select too many packages/plugins, watch CPU usage carefully."
+        echo -e "Known CPU models, descending performance: 7763, 8370C, 8272CL, 8171M, E5-2673\n"
+        
+        echo "-------------------------- CPU info --------------------------"
+        echo "Physical CPU count: $(cat /proc/cpuinfo | grep "physical id" | sort | uniq | wc -l)"
+        echo -e "CPU core info: $(cat /proc/cpuinfo | grep name | cut -f2 -d: | uniq -c)\n"
+        
+        echo "-------------------------- Memory info --------------------------"
+        echo "Installed memory details:"
+        echo -e "$(sudo lshw -short -C memory | grep GiB)\n"
+        
+        echo "-------------------------- Disk info --------------------------"
+        echo "Disk count: $(ls /dev/sd* | grep -v [1-9] | wc -l)" && df -hT
 
     - name: Initialization Environment(初始化环境)
       env:
@@ -80,7 +83,7 @@ jobs:
         git clone $REPO_URL -b $REPO_BRANCH openwrt
         cd openwrt
         echo "OPENWRT_PATH=$PWD" >> $GITHUB_ENV
-        VERSION_INFO=$(git show -s --date=short --format="作者: %an<br/>时间: %cd<br/>内容: %s<br/>hash: %H")
+        VERSION_INFO=$(git show -s --date=short --format="Author: %an<br/>Date: %cd<br/>Message: %s<br/>Hash: %H")
         echo "VERSION_INFO=$VERSION_INFO" >> $GITHUB_ENV
 
     - name: Check available IPQ60xx devices
@@ -88,25 +91,17 @@ jobs:
         cd $OPENWRT_PATH
         grep -R "DEVICE_.*\(xiaomi\|redmi\|ax1800\|rm1800\)" target/linux/qualcommax/image target/linux/*/image || true
 
-    - name: Generate Variables(生成变量)
-      run: |
-        cp $CONFIG_FILE $OPENWRT_PATH/.config
-        cd $OPENWRT_PATH
-        make defconfig > /dev/null 2>&1
-        SOURCE_REPO="$(echo $REPO_URL | awk -F '/' '{print $(NF)}')"
-        echo "SOURCE_REPO=$SOURCE_REPO" >> $GITHUB_ENV
-        DEVICE_TARGET=$(cat .config | grep CONFIG_TARGET_BOARD | awk -F '"' '{print $2}')
-        echo "DEVICE_TARGET=$DEVICE_TARGET" >> $GITHUB_ENV
-        DEVICE_SUBTARGET=$(cat .config | grep CONFIG_TARGET_SUBTARGET | awk -F '"' '{print $2}')
-        echo "DEVICE_SUBTARGET=$DEVICE_SUBTARGET" >> $GITHUB_ENV
-
-    - name: Cache Toolchain(缓存工具链)
-      if: env.CACHE_TOOLCHAIN == 'true'
-      uses: HiGarfield/cachewrtbuild@main
-      with:
-        ccache: false
-        mixkey: ${{ env.SOURCE_REPO }}-${{ env.REPO_BRANCH }}-${{ env.DEVICE_TARGET }}-${{ env.DEVICE_SUBTARGET }}
-        prefix: ${{ env.OPENWRT_PATH }}
+    # - name: Generate Variables(生成变量)
+    #   run: |
+    #     cp $CONFIG_FILE $OPENWRT_PATH/.config
+    #     cd $OPENWRT_PATH
+    #     make defconfig > /dev/null 2>&1
+    #     SOURCE_REPO="$(echo $REPO_URL | awk -F '/' '{print $(NF)}')"
+    #     echo "SOURCE_REPO=$SOURCE_REPO" >> $GITHUB_ENV
+    #     DEVICE_TARGET=$(cat .config | grep CONFIG_TARGET_BOARD | awk -F '"' '{print $2}')
+    #     echo "DEVICE_TARGET=$DEVICE_TARGET" >> $GITHUB_ENV
+    #     DEVICE_SUBTARGET=$(cat .config | grep CONFIG_TARGET_SUBTARGET | awk -F '"' '{print $2}')
+    #     echo "DEVICE_SUBTARGET=$DEVICE_SUBTARGET" >> $GITHUB_ENV
     
     - name: Install Feeds(安装feeds)
       run: |
@@ -131,13 +126,36 @@ jobs:
       run: |
         cd $OPENWRT_PATH
         make defconfig
+    
+        SOURCE_REPO="$(echo $REPO_URL | awk -F '/' '{print $(NF)}')"
+        echo "SOURCE_REPO=$SOURCE_REPO" >> $GITHUB_ENV
+    
+        DEVICE_TARGET=$(grep '^CONFIG_TARGET_BOARD=' .config | cut -d'"' -f2)
+        DEVICE_SUBTARGET=$(grep '^CONFIG_TARGET_SUBTARGET=' .config | cut -d'"' -f2)
+        DEVICE_PROFILE=$(grep '^CONFIG_TARGET_PROFILE=' .config | cut -d'"' -f2)
+    
+        echo "DEVICE_TARGET=$DEVICE_TARGET" >> $GITHUB_ENV
+        echo "DEVICE_SUBTARGET=$DEVICE_SUBTARGET" >> $GITHUB_ENV
+        echo "DEVICE_PROFILE=$DEVICE_PROFILE" >> $GITHUB_ENV
+    
         echo "=== selected target ==="
         grep -E "CONFIG_TARGET_(BOARD|SUBTARGET|PROFILE)=" .config || true
+    
         echo "=== selected ipq60xx devices ==="
         grep -E "CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_.*=y" .config || true
+    
         echo "=== available xiaomi/redmi device defines ==="
         grep -n -B5 -A20 "define Device/.*\(xiaomi\|redmi\|ax1800\)" target/linux/qualcommax/image/ipq60xx.mk || true
-        
+
+    
+    - name: Cache Toolchain(缓存工具链)
+      if: env.CACHE_TOOLCHAIN == 'true'
+      uses: HiGarfield/cachewrtbuild@main
+      with:
+        ccache: false
+        mixkey: ${{ env.SOURCE_REPO }}-${{ env.REPO_BRANCH }}-${{ env.DEVICE_TARGET }}-${{ env.DEVICE_SUBTARGET }}
+        prefix: ${{ env.OPENWRT_PATH }}
+
     - name: Compile Firmware(开始编译固件)
       id: compile
       run: |
@@ -190,13 +208,15 @@ jobs:
         artifacts: ${{ env.FIRMWARE_PATH }}/*
         body: |
           **This is OpenWrt Firmware for ${{ env.FIRMWARE_TAG }}**
-          ### 📒 固件信息(NOWIFI)
-          - 这是不带WiFi的固件
-          - 💻 这是 ${{ env.FIRMWARE_TAG }} 平台使用的 OpenWrt 固件
-          - ⚽ 固件源码: ${{ env.REPO_URL }}
-          - 💝 源码分支: ${{ env.REPO_BRANCH }}
-          - 🌐 默认地址: 192.168.1.1
-          - 🔑 默认密码: password
-          ### 🧊 固件版本
-          - 固件编译前最后一次➦[主源码](${{ env.REPO_URL }})更新记录
+        
+          ### 📒 Firmware info (NO WIFI)
+          - This firmware does **not** include Wi-Fi support
+          - 💻 Platform: ${{ env.FIRMWARE_TAG }}
+          - ⚽ Firmware source: ${{ env.REPO_URL }}
+          - 💝 Source branch: ${{ env.REPO_BRANCH }}
+          - 🌐 Default address: 192.168.1.1
+          - 🔑 Default password: password
+        
+          ### 🧊 Firmware version
+          - Last source update before this build:
           - ${{ env.VERSION_INFO }}
