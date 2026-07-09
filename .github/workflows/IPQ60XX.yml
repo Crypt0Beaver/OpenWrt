@@ -125,16 +125,19 @@ jobs:
     - name: Load Custom Configuration(加载自定义配置)
       run: |
         [ -e files ] && mv files $OPENWRT_PATH/files
-        [ -e $CONFIG_FILE ] && mv $CONFIG_FILE $OPENWRT_PATH/.config
-
-    - name: Download DL Package(下载DL软件包)
+        cp $CONFIG_FILE $OPENWRT_PATH/.config
+    
+    - name: Resolve config and check selected device
       run: |
         cd $OPENWRT_PATH
         make defconfig
-        make download -j8
-        find dl -size -1024c -exec ls -l {} \;
-        find dl -size -1024c -exec rm -f {} \;
-
+        echo "=== selected target ==="
+        grep -E "CONFIG_TARGET_(BOARD|SUBTARGET|PROFILE)=" .config || true
+        echo "=== selected ipq60xx devices ==="
+        grep -E "CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_.*=y" .config || true
+        echo "=== available xiaomi/redmi device defines ==="
+        grep -n -B5 -A20 "define Device/.*\(xiaomi\|redmi\|ax1800\)" target/linux/qualcommax/image/ipq60xx.mk || true
+        
     - name: Compile Firmware(开始编译固件)
       id: compile
       run: |
