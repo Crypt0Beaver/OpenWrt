@@ -209,7 +209,7 @@ jobs:
         body: |
           **This is OpenWrt Firmware for ${{ env.FIRMWARE_TAG }}**
         
-          ### 📒 Firmware info (NO WIFI)
+          ### 📒 Firmware info
           - This firmware does include Wi-Fi support and base services
           - 💻 Platform: ${{ env.FIRMWARE_TAG }}
           - ⚽ Firmware source: ${{ env.REPO_URL }}
