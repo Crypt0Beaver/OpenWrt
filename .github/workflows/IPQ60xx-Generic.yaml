@@ -163,6 +163,45 @@ jobs:
         echo "=== available xiaomi/redmi device defines ==="
         grep -n -B5 -A20 "define Device/.*\(xiaomi\|redmi\|ax1800\)" target/linux/qualcommax/image/ipq60xx.mk || true
 
+    - name: Validate RM1800 build configuration
+      run: |
+        cd "$OPENWRT_PATH"
+    
+        require_enabled() {
+          grep -q "^$1=y$" .config || {
+            echo "::error::$1 must be enabled"
+            exit 1
+          }
+        }
+    
+        require_disabled() {
+          if grep -q "^$1=y$" .config; then
+            echo "::error::$1 must be disabled"
+            exit 1
+          fi
+        }
+    
+        require_enabled CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_xiaomi_ax1800
+        require_enabled CONFIG_IPQ_MEM_PROFILE_256
+        require_enabled CONFIG_ATH11K_MEM_PROFILE_256M
+        require_enabled CONFIG_NSS_MEM_PROFILE_LOW
+    
+        require_disabled CONFIG_IPQ_MEM_PROFILE_512
+        require_disabled CONFIG_IPQ_MEM_PROFILE_1024
+        require_disabled CONFIG_ATH11K_MEM_PROFILE_512M
+        require_disabled CONFIG_ATH11K_MEM_PROFILE_1G
+        require_disabled CONFIG_ATH11K_NSS_SUPPORT
+        require_disabled CONFIG_NSS_MEM_PROFILE_MEDIUM
+        require_disabled CONFIG_NSS_DRV_WIFIOFFLOAD_ENABLE
+        require_disabled CONFIG_NSS_DRV_WIFI_MESH_ENABLE
+        require_disabled CONFIG_PACKAGE_MAC80211_NSS_SUPPORT
+        require_disabled CONFIG_PACKAGE_kmod-qca-nss-drv-wifi-meshmgr
+    
+        echo "=== Validated RM1800 configuration ==="
+        grep -E \
+          'TARGET_DEVICE.*xiaomi_ax1800|IPQ_MEM_PROFILE|ATH11K_MEM_PROFILE|ATH11K_NSS|NSS_MEM_PROFILE|WIFIOFFLOAD|WIFI_MESH|MAC80211_NSS' \
+          .config
+      
     - name: Validate RM1800 memory profile
       run: |
         cd "$OPENWRT_PATH"
