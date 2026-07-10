@@ -172,26 +172,26 @@ jobs:
         echo "=== available xiaomi/redmi device defines ==="
         grep -n -B5 -A20 "define Device/.*\(xiaomi\|redmi\|ax1800\)" target/linux/qualcommax/image/ipq60xx.mk || true
 
-    - name: Force 256M Memory Profile & Disable NSS
-      run: |
-        cd $OPENWRT_PATH
+    # - name: Force 256M Memory Profile & Disable NSS
+    #   run: |
+    #     cd $OPENWRT_PATH
         
-        # Force memory profiles 
-        echo "CONFIG_ATH11K_MEM_PROFILE_256M=y" >> .config
-        echo "CONFIG_IPQ_MEM_PROFILE_256=y" >> .config
+    #     # Force memory profiles 
+    #     echo "CONFIG_ATH11K_MEM_PROFILE_256M=y" >> .config
+    #     echo "CONFIG_IPQ_MEM_PROFILE_256=y" >> .config
         
-        # Disable features
-        echo "# CONFIG_NSS_DRV_WIFIOFFLOAD_ENABLE is not set" >> .config
-        echo "# CONFIG_MAC80211_NSS_SUPPORT is not set" >> .config
-        echo "# CONFIG_ATH11K_NSS_SUPPORT is not set" >> .config
-        echo "# CONFIG_PACKAGE_kmod-qca-nss-drv-wifioffload is not set" >> .config
+    #     # Disable features
+    #     echo "# CONFIG_NSS_DRV_WIFIOFFLOAD_ENABLE is not set" >> .config
+    #     echo "# CONFIG_MAC80211_NSS_SUPPORT is not set" >> .config
+    #     echo "# CONFIG_ATH11K_NSS_SUPPORT is not set" >> .config
+    #     echo "# CONFIG_PACKAGE_kmod-qca-nss-drv-wifioffload is not set" >> .config
         
-        make defconfig
+    #     make defconfig
         
-        # Brutal safety net: overwrite them if dependencies forced them back on
-        sed -i 's/CONFIG_NSS_DRV_WIFIOFFLOAD_ENABLE=y/# CONFIG_NSS_DRV_WIFIOFFLOAD_ENABLE is not set/g' .config
-        sed -i 's/CONFIG_MAC80211_NSS_SUPPORT=y/# CONFIG_MAC80211_NSS_SUPPORT is not set/g' .config
-        sed -i 's/CONFIG_ATH11K_NSS_SUPPORT=y/# CONFIG_ATH11K_NSS_SUPPORT is not set/g' .config
+    #     # Brutal safety net: overwrite them if dependencies forced them back on
+    #     sed -i 's/CONFIG_NSS_DRV_WIFIOFFLOAD_ENABLE=y/# CONFIG_NSS_DRV_WIFIOFFLOAD_ENABLE is not set/g' .config
+    #     sed -i 's/CONFIG_MAC80211_NSS_SUPPORT=y/# CONFIG_MAC80211_NSS_SUPPORT is not set/g' .config
+    #     sed -i 's/CONFIG_ATH11K_NSS_SUPPORT=y/# CONFIG_ATH11K_NSS_SUPPORT is not set/g' .config
 
         
     - name: Validate RM1800 build configuration
