@@ -103,7 +103,7 @@ jobs:
         path: |
           openwrt/dl
           openwrt/.ccache
-        key: openwrt-${{ runner.os }}-${{ hashFiles('$CONFIG_FILE') }}
+        key: openwrt-${{ runner.os }}-${{ hashFiles(format('configs/{0}.config', inputs.config_name)) }}
         restore-keys: |
           openwrt-${{ runner.os }}-
 
