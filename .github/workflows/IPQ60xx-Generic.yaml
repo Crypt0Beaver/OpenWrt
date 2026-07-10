@@ -45,17 +45,7 @@ jobs:
   Build:
     runs-on: ubuntu-22.04
 
-    steps:
-    - name: Validate selected config
-      run: |
-        test -f "$CONFIG_FILE" || {
-          echo "::error::Config not found: $CONFIG_FILE"
-          exit 1
-        }
-    
-        echo "Using config: $CONFIG_FILE"
-        echo "Description: $CONFIG_DESCRIPTION"
-        
+    steps:        
     - name: Check Server Performance(检查服务器性能)
       run: |
         echo "Warning ⚠"
@@ -96,6 +86,16 @@ jobs:
 
     - name: Checkout
       uses: actions/checkout@main
+
+    - name: Validate selected config
+      run: |
+        test -f "$CONFIG_FILE" || {
+          echo "::error::Config not found: $CONFIG_FILE"
+          exit 1
+        }
+    
+        echo "Using config: $CONFIG_FILE"
+        echo "Description: $CONFIG_DESCRIPTION"
 
     - name: Cache OpenWrt downloads
       uses: actions/cache@v4
