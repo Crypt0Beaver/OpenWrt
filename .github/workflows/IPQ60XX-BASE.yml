@@ -73,7 +73,7 @@ jobs:
         path: |
           openwrt/dl
           openwrt/.ccache
-        key: openwrt-${{ runner.os }}-${{ hashFiles('$CONFIG_FILE') }}
+        key: openwrt-${{ runner.os }}-${{ hashFiles('configs/ipq60xx-base.config') }}
         restore-keys: |
           openwrt-${{ runner.os }}-
 
