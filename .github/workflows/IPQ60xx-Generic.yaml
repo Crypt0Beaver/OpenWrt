@@ -97,6 +97,15 @@ jobs:
         echo "Using config: $CONFIG_FILE"
         echo "Description: $CONFIG_DESCRIPTION"
 
+    - name: Clone Source Code(克隆源代码)
+      run: |
+        df -hT $GITHUB_WORKSPACE
+        git clone $REPO_URL -b $REPO_BRANCH openwrt
+        cd openwrt
+        echo "OPENWRT_PATH=$PWD" >> $GITHUB_ENV
+        VERSION_INFO=$(git show -s --date=short --format="Author: %an<br/>Date: %cd<br/>Message: %s<br/>Hash: %H")
+        echo "VERSION_INFO=$VERSION_INFO" >> $GITHUB_ENV
+
     - name: Cache OpenWrt downloads
       uses: actions/cache@v4
       with:
@@ -106,15 +115,6 @@ jobs:
         key: openwrt-${{ runner.os }}-${{ hashFiles(format('configs/{0}.config', inputs.config_name)) }}
         restore-keys: |
           openwrt-${{ runner.os }}-
-
-    - name: Clone Source Code(克隆源代码)
-      run: |
-        df -hT $GITHUB_WORKSPACE
-        git clone $REPO_URL -b $REPO_BRANCH openwrt
-        cd openwrt
-        echo "OPENWRT_PATH=$PWD" >> $GITHUB_ENV
-        VERSION_INFO=$(git show -s --date=short --format="Author: %an<br/>Date: %cd<br/>Message: %s<br/>Hash: %H")
-        echo "VERSION_INFO=$VERSION_INFO" >> $GITHUB_ENV
 
     - name: Check available IPQ60xx devices
       run: |
