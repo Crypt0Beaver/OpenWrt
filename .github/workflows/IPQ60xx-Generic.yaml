@@ -212,17 +212,17 @@ jobs:
     #     echo "=== Post-Brutalize Config State ==="
     #     grep -E 'NSS|ATH11K_MEM_PROFILE|IPQ_MEM_PROFILE' .config || true
 
-    - name: Patch Makefiles to remove NSS defaults
-      run: |
-        cd $OPENWRT_PATH
+    # - name: Patch Makefiles to remove NSS defaults
+    #   run: |
+    #     cd $OPENWRT_PATH
         
-        # Prevent ath11k from forcing NSS on
-        sed -i 's/select ATH11K_NSS_SUPPORT/# select ATH11K_NSS_SUPPORT/g' target/linux/qualcommax/Makefile
-        sed -i 's/select MAC80211_NSS_SUPPORT/# select MAC80211_NSS_SUPPORT/g' package/kernel/mac80211/Makefile
+    #     # Prevent ath11k from forcing NSS on
+    #     sed -i 's/select ATH11K_NSS_SUPPORT/# select ATH11K_NSS_SUPPORT/g' target/linux/qualcommax/Makefile
+    #     sed -i 's/select MAC80211_NSS_SUPPORT/# select MAC80211_NSS_SUPPORT/g' package/kernel/mac80211/Makefile
         
-        # Prevent the router profile from demanding NSS offload
-        sed -i 's/kmod-qca-nss-drv-wifioffload//g' target/linux/qualcommax/image/ipq60xx.mk
-        sed -i 's/qca-nss-clients//g' target/linux/qualcommax/image/ipq60xx.mk
+    #     # Prevent the router profile from demanding NSS offload
+    #     sed -i 's/kmod-qca-nss-drv-wifioffload//g' target/linux/qualcommax/image/ipq60xx.mk
+    #     sed -i 's/qca-nss-clients//g' target/linux/qualcommax/image/ipq60xx.mk
 
 
     - name: Validate RM1800 build configuration
