@@ -163,6 +163,23 @@ jobs:
         echo "=== available xiaomi/redmi device defines ==="
         grep -n -B5 -A20 "define Device/.*\(xiaomi\|redmi\|ax1800\)" target/linux/qualcommax/image/ipq60xx.mk || true
 
+    - name: Enforce RM1800 low-memory Wi-Fi settings
+      run: |
+        cd "$OPENWRT_PATH"
+    
+        ./scripts/config \
+          --enable NSS_MEM_PROFILE_LOW \
+          --disable NSS_MEM_PROFILE_MEDIUM \
+          --disable ATH11K_NSS_SUPPORT \
+          --disable ATH11K_NSS_MESH_SUPPORT \
+          --disable NSS_DRV_WIFIOFFLOAD_ENABLE \
+          --disable NSS_DRV_WIFI_MESH_ENABLE \
+          --disable PACKAGE_MAC80211_NSS_SUPPORT \
+          --disable PACKAGE_MAC80211_NSS_REDIRECT \
+          --disable PACKAGE_kmod-qca-nss-drv-wifi-meshmgr
+    
+        make defconfig
+        
     - name: Validate RM1800 build configuration
       run: |
         cd "$OPENWRT_PATH"
