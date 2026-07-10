@@ -132,6 +132,11 @@ jobs:
       run: |
         cd $OPENWRT_PATH
         make defconfig
+
+        grep -q '^CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_xiaomi_ax1800=y$' .config || {
+          echo "::error::Xiaomi AX1800 profile was not selected"
+          exit 1
+        }
     
         SOURCE_REPO="$(echo $REPO_URL | awk -F '/' '{print $(NF)}')"
         echo "SOURCE_REPO=$SOURCE_REPO" >> $GITHUB_ENV
