@@ -120,37 +120,23 @@ jobs:
       run: |
         cd $OPENWRT_PATH
         grep -R "DEVICE_.*\(xiaomi\|redmi\|ax1800\|rm1800\)" target/linux/qualcommax/image target/linux/*/image || true
-
-    # - name: Generate Variables(生成变量)
-    #   run: |
-    #     cp $CONFIG_FILE $OPENWRT_PATH/.config
-    #     cd $OPENWRT_PATH
-    #     make defconfig > /dev/null 2>&1
-    #     SOURCE_REPO="$(echo $REPO_URL | awk -F '/' '{print $(NF)}')"
-    #     echo "SOURCE_REPO=$SOURCE_REPO" >> $GITHUB_ENV
-    #     DEVICE_TARGET=$(cat .config | grep CONFIG_TARGET_BOARD | awk -F '"' '{print $2}')
-    #     echo "DEVICE_TARGET=$DEVICE_TARGET" >> $GITHUB_ENV
-    #     DEVICE_SUBTARGET=$(cat .config | grep CONFIG_TARGET_SUBTARGET | awk -F '"' '{print $2}')
-    #     echo "DEVICE_SUBTARGET=$DEVICE_SUBTARGET" >> $GITHUB_ENV
     
     - name: Install Feeds(安装feeds)
       run: |
         cd $OPENWRT_PATH
         ./scripts/feeds update -a
         ./scripts/feeds install -a
-
-    # - name: Apply patches(安装补丁)   
-    #   run: |
-    #     git config --global user.name "OpenWrt Builder"
-    #     git config --global user.email "buster-openwrt@ovvo.uk"
-    #     cp $PATCHES_FILE_1 $OPENWRT_PATH/feeds/luci
-    #     cd $OPENWRT_PATH/feeds/luci
-    #     git am 0002-show-soc-status-on-luci.patch
   
     - name: Load Custom Configuration(加载自定义配置)
       run: |
         [ -e files ] && mv files $OPENWRT_PATH/files
         cp $CONFIG_FILE $OPENWRT_PATH/.config
+
+    - name: Fix kernel config for non-interactive build
+      run: |
+        echo '# CONFIG_ALLOC_SKB_PAGE_FRAG_DISABLE is not set' \
+          >> "$OPENWRT_PATH/target/linux/generic/config-6.12"
+        rm -rf "$OPENWRT_PATH/build_dir/target-"*
     
     - name: Resolve config and check selected device
       run: |
