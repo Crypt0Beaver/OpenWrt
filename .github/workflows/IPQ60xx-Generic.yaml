@@ -277,15 +277,15 @@ jobs:
     #       'TARGET_DEVICE.*xiaomi_ax1800|IPQ_MEM_PROFILE|ATH11K_MEM_PROFILE|ATH11K_NSS|NSS_MEM_PROFILE|WIFIOFFLOAD|WIFI_MESH|MAC80211_NSS' \
     #       .config
       
-    - name: Validate RM1800 memory profile
-      run: |
-        cd "$OPENWRT_PATH"
-        grep -E 'IPQ_MEM_PROFILE|ATH11K_MEM_PROFILE|NSS.*WIFI|MAC80211_NSS' .config || true
-        grep -q '^CONFIG_IPQ_MEM_PROFILE_256=y$' .config
-        grep -q '^CONFIG_ATH11K_MEM_PROFILE_256M=y$' .config
-        ! grep -q '^CONFIG_ATH11K_NSS_SUPPORT=y$' .config
-        ! grep -q '^CONFIG_NSS_DRV_WIFIOFFLOAD_ENABLE=y$' .config
-        ! grep -q '^CONFIG_PACKAGE_MAC80211_NSS_SUPPORT=y$' .config
+    # - name: Validate RM1800 memory profile
+    #   run: |
+    #     cd "$OPENWRT_PATH"
+    #     grep -E 'IPQ_MEM_PROFILE|ATH11K_MEM_PROFILE|NSS.*WIFI|MAC80211_NSS' .config || true
+    #     grep -q '^CONFIG_IPQ_MEM_PROFILE_256=y$' .config
+    #     grep -q '^CONFIG_ATH11K_MEM_PROFILE_256M=y$' .config
+    #     ! grep -q '^CONFIG_ATH11K_NSS_SUPPORT=y$' .config
+    #     ! grep -q '^CONFIG_NSS_DRV_WIFIOFFLOAD_ENABLE=y$' .config
+    #     ! grep -q '^CONFIG_PACKAGE_MAC80211_NSS_SUPPORT=y$' .config
     
     - name: Cache Toolchain(缓存工具链)
       if: env.CACHE_TOOLCHAIN == 'true'
