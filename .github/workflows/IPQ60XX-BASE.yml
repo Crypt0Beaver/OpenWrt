@@ -121,6 +121,12 @@ jobs:
       run: |
         [ -e files ] && mv files $OPENWRT_PATH/files
         cp $CONFIG_FILE $OPENWRT_PATH/.config
+
+    - name: Fix kernel config for non-interactive build
+      run: |
+        echo '# CONFIG_ALLOC_SKB_PAGE_FRAG_DISABLE is not set' \
+          >> "$OPENWRT_PATH/target/linux/generic/config-6.12"
+        rm -rf "$OPENWRT_PATH/build_dir/target-"*
     
     - name: Resolve config and check selected device
       run: |
