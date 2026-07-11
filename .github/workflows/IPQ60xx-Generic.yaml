@@ -174,25 +174,30 @@ jobs:
     - name: Stamp version + build id
       working-directory: openwrt
       run: |
-        OS_NAME="$(sed -n 's/^VERSION_DIST:=\(.*\)$/\1/p' include/version.mk 2>/dev/null)"
-        [ -z "$OS_NAME" ] && OS_NAME="$(sed -n 's/^\s*DISTRIB_ID=.\(.*\).$/\1/p' package/base-files/files/etc/openwrt_release 2>/dev/null)"
-        [ -z "$OS_NAME" ] && OS_NAME="${{ github.event.repository.name }}"
+        # first match only (q), and DON'T trust make-expression values
+        OS_NAME="$(sed -n 's/^VERSION_DIST:=\(.*\)$/\1/p;/^VERSION_DIST:=/q' include/version.mk 2>/dev/null | head -1)"
+        # if it still looks like a make expr ($ or parens) or is empty, fall back
+        case "$OS_NAME" in ''|*'$'*|*'('*) OS_NAME="${{ github.event.repository.name }}";; esac
     
         CONFIG="${{ github.event.inputs.config_name }}"
         TAG="${{ github.event.inputs.release_tag }}"
         SHA="${GITHUB_SHA::7}"
         RUN="${{ github.run_id }}"
         STAMP="$(date -u +%FT%TZ)"
-    
         VERSION_NUMBER="${CONFIG}-${REPO_BRANCH}-${SHA}"
-        {
-          echo "CONFIG_VERSION_DIST=\"${OS_NAME}\""
-          echo "CONFIG_VERSION_NUMBER=\"${VERSION_NUMBER}\""
-        } >> .config
+    
+        # single line, safe chars only
+        SAFE_OS="$(printf '%s' "$OS_NAME"        | tr -d '\r\n' | sed 's/[^A-Za-z0-9._-]/-/g')"
+        SAFE_VER="$(printf '%s' "$VERSION_NUMBER" | tr -d '\r\n' | sed 's/[^A-Za-z0-9._-]/-/g')"
+    
+        # idempotent: strip any prior lines, then append clean
+        sed -i '/^CONFIG_VERSION_DIST=/d; /^CONFIG_VERSION_NUMBER=/d' .config
+        echo "CONFIG_VERSION_DIST=\"${SAFE_OS}\""   >> .config
+        echo "CONFIG_VERSION_NUMBER=\"${SAFE_VER}\"" >> .config
     
         mkdir -p files/etc
         cat > files/etc/build-id <<EOF
-        os=${OS_NAME}
+        os=${SAFE_OS}
         config=${CONFIG}
         release_tag=${TAG}
         repo_url=${REPO_URL}
@@ -200,9 +205,10 @@ jobs:
         sha=${SHA}
         run_id=${RUN}
         built=${STAMP}
+        version_info=${VERSION_INFO//<br\/>/; }
         EOF
     
-        echo "Stamped: ${OS_NAME} ${VERSION_NUMBER}"
+        echo "Stamped: ${SAFE_OS} ${SAFE_VER}"
     
     - name: Resolve config and check selected device
       run: |
