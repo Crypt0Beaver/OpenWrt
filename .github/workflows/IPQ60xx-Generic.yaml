@@ -36,11 +36,6 @@ on:
           - https://github.com/breeze303/openwrt-6.x.git@main-nss
         default: https://github.com/VIKINGYFY/immortalwrt.git@main
 
-      repo_branch:
-        description: Source branch
-        required: true
-        type: string
-        default: main
 
 permissions:
   contents: write
