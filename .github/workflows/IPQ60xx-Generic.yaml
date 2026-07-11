@@ -192,6 +192,8 @@ jobs:
     
         # idempotent: strip any prior lines, then append clean
         sed -i '/^CONFIG_VERSION_DIST=/d; /^CONFIG_VERSION_NUMBER=/d' .config
+        sed -i '/^CONFIG_VERSIONOPT=/d; /^CONFIG_VERSION_DIST=/d; /^CONFIG_VERSION_NUMBER=/d' .config
+        echo "CONFIG_VERSIONOPT=y"                   >> .config
         echo "CONFIG_VERSION_DIST=\"${SAFE_OS}\""   >> .config
         echo "CONFIG_VERSION_NUMBER=\"${SAFE_VER}\"" >> .config
     
@@ -236,7 +238,7 @@ jobs:
         grep -n -B5 -A20 "define Device/.*\(xiaomi\|redmi\|ax1800\)" target/linux/qualcommax/image/ipq60xx.mk || true
 
         echo "=== written config version ==="
-        grep CONFIG_VERSION_ .config
+        grep CONFIG_VERSION_ .config || true
 
     # - name: Force 256M Memory Profile & Disable NSS
     #   run: |
