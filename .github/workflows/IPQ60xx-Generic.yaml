@@ -25,6 +25,23 @@ on:
         type: string
         default: IPQ60XX-RM1800
 
+
+      repo_url:
+        description: Source OpenWrt/ImmortalWrt repo
+        required: true
+        type: choice
+        options:
+          - https://github.com/VIKINGYFY/immortalwrt.git@main
+          - https://github.com/immortalwrt/immortalwrt.git@master
+          - https://github.com/breeze303/openwrt-6.x.git@main-nss
+        default: https://github.com/VIKINGYFY/immortalwrt.git@main
+
+      repo_branch:
+        description: Source branch
+        required: true
+        type: string
+        default: main
+
 permissions:
   contents: write
 
@@ -33,8 +50,8 @@ env:
   # REPO_BRANCH: main-nss
   # REPO_URL: https://github.com/immortalwrt/immortalwrt.git
   # REPO_BRANCH: master
-  REPO_URL: https://github.com/VIKINGYFY/immortalwrt.git
-  REPO_BRANCH: main
+  # REPO_URL: ${{ inputs.repo_url }}
+  # REPO_BRANCH: ${{ inputs.repo_branch }}
 
   CONFIG_FILE: configs/${{ inputs.config_name }}.config
   CONFIG_DESCRIPTION: ${{ inputs.config_description }}
@@ -100,6 +117,13 @@ jobs:
     - name: Checkout
       uses: actions/checkout@main
 
+    - name: Resolve source
+      run: |
+        SOURCE="${{ github.event.inputs.source }}"
+        echo "REPO_URL=${SOURCE%@*}"    >> "$GITHUB_ENV"
+        echo "REPO_BRANCH=${SOURCE##*@}" >> "$GITHUB_ENV"
+        echo "Resolved ${SOURCE%@*} @ ${SOURCE##*@}"
+
     - name: Validate selected config
       run: |
         test -f "$CONFIG_FILE" || {
@@ -151,6 +175,39 @@ jobs:
         echo '# CONFIG_ALLOC_SKB_PAGE_FRAG_DISABLE is not set' \
           >> "$OPENWRT_PATH/target/linux/generic/config-6.12"
         rm -rf "$OPENWRT_PATH/build_dir/target-"*
+
+    - name: Stamp version + build id
+      working-directory: openwrt
+      run: |
+        OS_NAME="$(sed -n 's/^VERSION_DIST:=\(.*\)$/\1/p' include/version.mk 2>/dev/null)"
+        [ -z "$OS_NAME" ] && OS_NAME="$(sed -n 's/^\s*DISTRIB_ID=.\(.*\).$/\1/p' package/base-files/files/etc/openwrt_release 2>/dev/null)"
+        [ -z "$OS_NAME" ] && OS_NAME="${{ github.event.repository.name }}"
+    
+        CONFIG="${{ github.event.inputs.config_name }}"
+        TAG="${{ github.event.inputs.release_tag }}"
+        SHA="${GITHUB_SHA::7}"
+        RUN="${{ github.run_id }}"
+        STAMP="$(date -u +%FT%TZ)"
+    
+        VERSION_NUMBER="${CONFIG}-${REPO_BRANCH}-${SHA}"
+        {
+          echo "CONFIG_VERSION_DIST=\"${OS_NAME}\""
+          echo "CONFIG_VERSION_NUMBER=\"${VERSION_NUMBER}\""
+        } >> .config
+    
+        mkdir -p files/etc
+        cat > files/etc/build-id <<EOF
+        os=${OS_NAME}
+        config=${CONFIG}
+        release_tag=${TAG}
+        repo_url=${REPO_URL}
+        repo_branch=${REPO_BRANCH}
+        sha=${SHA}
+        run_id=${RUN}
+        built=${STAMP}
+        EOF
+    
+        echo "Stamped: ${OS_NAME} ${VERSION_NUMBER}"
     
     - name: Resolve config and check selected device
       run: |
@@ -176,6 +233,9 @@ jobs:
     
         echo "=== available xiaomi/redmi device defines ==="
         grep -n -B5 -A20 "define Device/.*\(xiaomi\|redmi\|ax1800\)" target/linux/qualcommax/image/ipq60xx.mk || true
+
+        echo "=== written config version ==="
+        grep CONFIG_VERSION_ .config
 
     # - name: Force 256M Memory Profile & Disable NSS
     #   run: |
