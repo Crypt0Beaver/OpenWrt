@@ -114,7 +114,7 @@ jobs:
 
     - name: Resolve source
       run: |
-        SOURCE="${{ github.event.inputs.source }}"
+        SOURCE="${{ github.event.inputs.repo_url }}"
         echo "REPO_URL=${SOURCE%@*}"    >> "$GITHUB_ENV"
         echo "REPO_BRANCH=${SOURCE##*@}" >> "$GITHUB_ENV"
         echo "Resolved ${SOURCE%@*} @ ${SOURCE##*@}"
