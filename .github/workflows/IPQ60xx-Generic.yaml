@@ -13,11 +13,11 @@ on:
           - rm1800-gateway
         default: rm1800-wifi
 
-      config_description:
-        description: Description shown in the release
-        required: true
-        type: string
-        default: Xiaomi AX1800(RM1800) Wi-Fi build
+      # config_description:
+      #   description: Description shown in the release
+      #   required: true
+      #   type: string
+      #   default: Xiaomi AX1800(RM1800) Wi-Fi build
 
       release_tag:
         description: Release tag
@@ -49,7 +49,7 @@ env:
   # REPO_BRANCH: ${{ inputs.repo_branch }}
 
   CONFIG_FILE: configs/${{ inputs.config_name }}.config
-  CONFIG_DESCRIPTION: ${{ inputs.config_description }}
+  # CONFIG_DESCRIPTION: ${{ inputs.config_description }}
   FIRMWARE_TAG: ${{ inputs.release_tag }}
   
   CLASH_KERNEL: amd64
@@ -115,9 +115,31 @@ jobs:
     - name: Resolve source
       run: |
         SOURCE="${{ github.event.inputs.repo_url }}"
-        echo "REPO_URL=${SOURCE%@*}"    >> "$GITHUB_ENV"
-        echo "REPO_BRANCH=${SOURCE##*@}" >> "$GITHUB_ENV"
-        echo "Resolved ${SOURCE%@*} @ ${SOURCE##*@}"
+        REPO_URL="${SOURCE%@*}"
+        REPO_BRANCH="${SOURCE##*@}"
+        echo "REPO_URL=$REPO_URL"       >> "$GITHUB_ENV"
+        echo "REPO_BRANCH=$REPO_BRANCH" >> "$GITHUB_ENV"
+    
+        # OS name from the repo
+        case "$REPO_URL" in
+          *breeze303*)                OS_LABEL="LibWrt" ;;
+          *immortalwrt*|*VIKINGYFY*)  OS_LABEL="ImmortalWrt" ;;
+          *)                          OS_LABEL="OpenWrt" ;;
+        esac
+    
+        # Variant from config_name (strip the rm1800- prefix, Title-case)
+        VARIANT_RAW="${{ github.event.inputs.config_name }}"
+        VARIANT="${VARIANT_RAW#rm1800-}"
+        case "$VARIANT" in
+          minimal) VARIANT_LABEL="Minimal" ;;
+          wifi)    VARIANT_LABEL="Wi-Fi" ;;
+          gateway) VARIANT_LABEL="Gateway" ;;
+          *)       VARIANT_LABEL="$VARIANT" ;;
+        esac
+    
+        echo "OS_LABEL=$OS_LABEL"           >> "$GITHUB_ENV"
+        echo "CONFIG_DESCRIPTION=Xiaomi AX1800(RM1800) ${OS_LABEL} ${VARIANT_LABEL} build" >> "$GITHUB_ENV"
+        echo "Resolved $REPO_URL @ $REPO_BRANCH → ${OS_LABEL} ${VARIANT_LABEL}"
 
     - name: Validate selected config
       run: |
