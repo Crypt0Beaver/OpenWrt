@@ -198,15 +198,27 @@ jobs:
         rm -rf build_dir/target-*
 
 
-    - name: Enable CMA + reserve contiguous DMA for ath11k
+    - name: CMA children defaults + reserve 16M via DTS
       run: |
         cd $OPENWRT_PATH
-        # 1) compile in CMA/DMA_CMA on whatever kernel this build uses (glob, not a fixed version)
+        # CMA parent comes from the seed (CONFIG_KERNEL_CMA/DMA_CMA).
+        # Here we only pin the CHILD symbols so syncconfig never prompts in CI.
         for f in target/linux/generic/config-*; do
-          sed -i '/CONFIG_CMA[ =]/d; /CONFIG_CMA is not set/d; /CONFIG_DMA_CMA/d' "$f"
-          printf 'CONFIG_CMA=y\nCONFIG_DMA_CMA=y\n' >> "$f"
+          sed -i '/CONFIG_CMA_/d' "$f"
+          cat >> "$f" <<'EOF'
+          # CONFIG_CMA_DEBUG is not set
+          # CONFIG_CMA_DEBUGFS is not set
+          # CONFIG_CMA_SYSFS is not set
+          CONFIG_CMA_AREAS=7
+          CONFIG_CMA_SIZE_MBYTES=0
+          CONFIG_CMA_SIZE_SEL_MBYTES=y
+          # CONFIG_CMA_SIZE_SEL_PERCENTAGE is not set
+          # CONFIG_CMA_SIZE_SEL_MIN is not set
+          # CONFIG_CMA_SIZE_SEL_MAX is not set
+          CONFIG_CMA_ALIGNMENT=8
+          EOF
         done
-        # 2) reserve 16M via the board DTS bootargs
+        # reserve 16M on the kernel cmdline via the board DTS bootargs
         DTS=$(grep -rl 'xiaomi,ax1800' target/linux/qualcommax/files*/arch/arm64/boot/dts/ 2>/dev/null | head -1)
         echo "Found DTS: $DTS"
         if [ -n "$DTS" ]; then
@@ -219,6 +231,7 @@ jobs:
         else
           echo "::warning::AX1800 DTS not found; cma= not applied"
         fi
+
 
     - name: Stamp version + build id
       working-directory: openwrt
