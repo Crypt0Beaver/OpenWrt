@@ -218,7 +218,7 @@ jobs:
             'CONFIG_CMA_ALIGNMENT=8' >> "$f"
         done
         # reserve 16M on the kernel cmdline via the board DTS bootargs
-        DTS=$(grep -rl 'xiaomi,ax1800' target/linux/qualcommax/files*/arch/arm64/boot/dts/ 2>/dev/null | head -1)
+        DTS=$(find target/linux/qualcommax -name '*ax1800*.dts' | head -1)
         echo "Found DTS: $DTS"
         if [ -n "$DTS" ]; then
           if grep -q 'bootargs-append' "$DTS"; then
@@ -231,6 +231,15 @@ jobs:
           echo "::warning::AX1800 DTS not found; cma= not applied"
         fi
 
+    - name: Locate AX1800 DTS
+      run: |
+        cd $OPENWRT_PATH
+        echo "=== dts files mentioning ax1800/rm1800 ==="
+        grep -rilE 'ax1800|rm1800' target/linux/qualcommax/ --include='*.dts' --include='*.dtsi' || true
+        echo "=== any dts with bootargs ==="
+        grep -rl 'bootargs' target/linux/qualcommax/ --include='*.dts' --include='*.dtsi' || true
+        echo "=== dts dir listing ==="
+        ls -R target/linux/qualcommax/files*/arch/arm64/boot/dts/qcom/ 2>/dev/null | grep -iE 'dts|ax1800|ipq60' || true
 
     - name: Stamp version + build id
       working-directory: openwrt
