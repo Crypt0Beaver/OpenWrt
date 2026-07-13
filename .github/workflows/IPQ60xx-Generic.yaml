@@ -123,7 +123,8 @@ jobs:
         # OS name from the repo
         case "$REPO_URL" in
           *breeze303*)                OS_LABEL="LibWrt" ;;
-          *immortalwrt*|*VIKINGYFY*)  OS_LABEL="ImmortalWrt" ;;
+          *immortalwrt*)              OS_LABEL="ImmortalWrt" ;;
+          *VIKINGYFY*)                OS_LABEL="ImmortalWrt-V" ;;
           *)                          OS_LABEL="OpenWrt" ;;
         esac
     
@@ -139,7 +140,7 @@ jobs:
     
         echo "OS_LABEL=$OS_LABEL"           >> "$GITHUB_ENV"
         echo "CONFIG_DESCRIPTION=Xiaomi AX1800(RM1800) ${OS_LABEL} ${VARIANT_LABEL} build" >> "$GITHUB_ENV"
-        echo "FIRMWARE_TAG=${FIRMWARE_TAG}-${VARIANT_LABEL}" >> "$GITHUB_ENV"
+        echo "FIRMWARE_TAG=${FIRMWARE_TAG}-${OS_LABEL}-${VARIANT_LABEL}" >> "$GITHUB_ENV"
         echo "Resolved $REPO_URL @ $REPO_BRANCH → ${OS_LABEL} ${VARIANT_LABEL}"
 
     - name: Validate selected config
