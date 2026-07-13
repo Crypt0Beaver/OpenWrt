@@ -1,5 +1,7 @@
 name: Build OpenWrt
 
+run-name: ${{ inputs.config_name }} @ ${{ inputs.repo_url }} (${{ inputs.release_tag }})
+
 on:
   workflow_dispatch:
     inputs:
