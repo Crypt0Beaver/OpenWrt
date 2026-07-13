@@ -228,12 +228,12 @@ jobs:
             '# CONFIG_CMA_SIZE_SEL_MAX is not set' \
             'CONFIG_CMA_ALIGNMENT=8' >> "$f"
         done
-        # reserve 16M via the board DTS bootargs (order-safe)
+        # reserve 8M via the board DTS bootargs (order-safe)
         DTS=target/linux/qualcommax/dts/ipq6000-ax1800.dts
         test -f "$DTS" || { echo "::error::AX1800 DTS missing"; exit 1; }
         if grep -q 'bootargs-append' "$DTS"; then
           # existing bootargs-append line: insert cma= inside its quotes
-          sed -i 's/\(bootargs-append = "[^"]*\)"/\1 cma=16M"/' "$DTS"
+          sed -i 's/\(bootargs-append = "[^"]*\)"/\1 cma=8M"/' "$DTS"
         else
           # no bootargs-append: append a SEPARATE merging root block at END of file
           printf '\n/ {\n\tchosen {\n\t\tbootargs-append = " cma=16M";\n\t};\n};\n' >> "$DTS"
