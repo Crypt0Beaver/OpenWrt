@@ -87,27 +87,27 @@ jobs:
         echo "-------------------------- Disk info --------------------------"
         echo "Disk count: $(ls /dev/sd* | grep -v [1-9] | wc -l)" && df -hT
 
-    # - name: Initialization Environment(初始化环境)
-    #   env:
-    #     DEBIAN_FRONTEND: noninteractive
-    #   run: |
-    #     # Fast cleanup
-    #     docker images -q | xargs -r docker rmi || true
-    #     sudo rm -rf /usr/share/dotnet /etc/apt/sources.list.d /usr/local/lib/android $AGENT_TOOLSDIRECTORY
+    - name: Initialization Environment(初始化环境)
+      env:
+        DEBIAN_FRONTEND: noninteractive
+      run: |
+        # Fast cleanup
+        docker images -q | xargs -r docker rmi || true
+        sudo rm -rf /usr/share/dotnet /etc/apt/sources.list.d /usr/local/lib/android $AGENT_TOOLSDIRECTORY
 
-    #     # Fast install of OpenWrt/LEDE dependencies
-    #     sudo -E apt-get -qq update
-    #     sudo -E apt-get -qq install -y --no-install-recommends \
-    #       ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
-    #       bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext \
-    #       gcc-multilib g++-multilib git gperf haveged help2man intltool libc6-dev-i386 \
-    #       libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev \
-    #       libncursesw5-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp nano ninja-build \
-    #       p7zip p7zip-full patch pkgconf python2.7 python3 python3-pyelftools python3-setuptools \
-    #       qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip \
-    #       vim wget xmlto xxd zlib1g-dev
+        # Fast install of OpenWrt/LEDE dependencies
+        sudo -E apt-get -qq update
+        sudo -E apt-get -qq install -y --no-install-recommends \
+          ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
+          bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext \
+          gcc-multilib g++-multilib git gperf haveged help2man intltool libc6-dev-i386 \
+          libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev \
+          libncursesw5-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp nano ninja-build \
+          p7zip p7zip-full patch pkgconf python2.7 python3 python3-pyelftools python3-setuptools \
+          qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip \
+          vim wget xmlto xxd zlib1g-dev
 
-    #     sudo timedatectl set-timezone "$TZ"
+        sudo timedatectl set-timezone "$TZ"
 
     - name: Combine Disks(合并磁盘)
       uses: easimon/maximize-build-space@master
@@ -185,11 +185,11 @@ jobs:
         cd $OPENWRT_PATH
         grep -R "DEVICE_.*\(xiaomi\|redmi\|ax1800\|rm1800\)" target/linux/qualcommax/image target/linux/*/image || true
     
-    # - name: Install Feeds(安装feeds)
-    #   run: |
-    #     cd $OPENWRT_PATH
-    #     ./scripts/feeds update -a
-    #     ./scripts/feeds install -a
+    - name: Install Feeds(安装feeds)
+      run: |
+        cd $OPENWRT_PATH
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
   
     - name: Load Custom Configuration(加载自定义配置)
       run: |
@@ -225,7 +225,9 @@ jobs:
             'CONFIG_CMA_ALIGNMENT=8' >> "$f"
         done
         # reserve 16M on the kernel cmdline via the board DTS bootargs
-        DTS=$(grep -rilE 'compatible.*(xiaomi|redmi),ax1800' target/linux/qualcommax/dts/ | head -1)
+        DTS=target/linux/qualcommax/dts/ipq6000-ax1800.dts
+        test -f "$DTS" || { echo "::error::AX1800 DTS missing"; exit 1; }
+
         echo "Found DTS: $DTS"
         if [ -n "$DTS" ]; then
           if grep -q 'bootargs-append' "$DTS"; then
@@ -237,18 +239,6 @@ jobs:
         else
           echo "::warning::AX1800 DTS not found; cma= not applied"
         fi
-
-    - name: Locate the REAL Xiaomi RM1800 DTS
-      run: |
-        cd $OPENWRT_PATH
-        echo "=== dts referencing the xiaomi include or rm1800 ==="
-        grep -rilE 'ipq6000-xiaomi|rm1800|redmi.*ax1800|xiaomi.*ax1800' target/linux/qualcommax/dts/ || true
-        echo "=== what the image profile points to (authoritative) ==="
-        grep -A15 -i 'xiaomi_ax1800\|redmi' target/linux/qualcommax/image/ipq60xx.mk || true
-        echo "=== compatible strings in candidate files ==="
-        for f in target/linux/qualcommax/dts/ipq6000-*.dts; do
-          echo "--- $f"; grep -H 'compatible' "$f" | head -2
-        done
 
     - name: Stamp version + build id
       working-directory: openwrt
