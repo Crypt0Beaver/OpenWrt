@@ -190,9 +190,34 @@ jobs:
 
     - name: Fix kernel config for non-interactive build
       run: |
-        echo '# CONFIG_ALLOC_SKB_PAGE_FRAG_DISABLE is not set' \
-          >> "$OPENWRT_PATH/target/linux/generic/config-6.12"
-        rm -rf "$OPENWRT_PATH/build_dir/target-"*
+        cd $OPENWRT_PATH
+        for f in target/linux/generic/config-*; do
+          echo '# CONFIG_ALLOC_SKB_PAGE_FRAG_DISABLE is not set' >> "$f"
+        done
+        rm -rf build_dir/target-*
+
+
+    - name: Enable CMA + reserve contiguous DMA for ath11k
+      run: |
+        cd $OPENWRT_PATH
+        # 1) compile in CMA/DMA_CMA on whatever kernel this build uses (glob, not a fixed version)
+        for f in target/linux/generic/config-*; do
+          sed -i '/CONFIG_CMA[ =]/d; /CONFIG_CMA is not set/d; /CONFIG_DMA_CMA/d' "$f"
+          printf 'CONFIG_CMA=y\nCONFIG_DMA_CMA=y\n' >> "$f"
+        done
+        # 2) reserve 16M via the board DTS bootargs
+        DTS=$(grep -rl 'xiaomi,ax1800' target/linux/qualcommax/files*/arch/arm64/boot/dts/ 2>/dev/null | head -1)
+        echo "Found DTS: $DTS"
+        if [ -n "$DTS" ]; then
+          if grep -q 'bootargs-append' "$DTS"; then
+            sed -i 's/\(bootargs-append = "[^"]*\)"/\1 cma=16M"/' "$DTS"
+          else
+            sed -i '0,/{/s//{\n\tchosen { bootargs-append = " cma=16M"; };/' "$DTS"
+          fi
+          echo "=== bootargs after edit ==="; grep -n 'bootargs\|cma=' "$DTS" || true
+        else
+          echo "::warning::AX1800 DTS not found; cma= not applied"
+        fi
 
     - name: Stamp version + build id
       working-directory: openwrt
