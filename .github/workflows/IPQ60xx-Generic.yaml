@@ -309,6 +309,9 @@ jobs:
         echo "=== written config version ==="
         grep CONFIG_VERSION_ .config || true
 
+        echo "=== CMA state ==="; grep -E '^CONFIG_CMA=|^CONFIG_DMA_CMA=' .config || echo "CMA NOT ENABLED"
+
+
     # - name: Force 256M Memory Profile & Disable NSS
     #   run: |
     #     cd $OPENWRT_PATH
