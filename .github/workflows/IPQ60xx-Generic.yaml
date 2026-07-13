@@ -229,20 +229,18 @@ jobs:
             'CONFIG_CMA_ALIGNMENT=8' >> "$f"
         done
         # reserve 16M on the kernel cmdline via the board DTS bootargs
+                # reserve 16M via a merge-appended chosen node (order-safe)
         DTS=target/linux/qualcommax/dts/ipq6000-ax1800.dts
         test -f "$DTS" || { echo "::error::AX1800 DTS missing"; exit 1; }
-
-        echo "Found DTS: $DTS"
-        if [ -n "$DTS" ]; then
-          if grep -q 'bootargs-append' "$DTS"; then
-            sed -i 's/\(bootargs-append = "[^"]*\)"/\1 cma=16M"/' "$DTS"
-          else
-            sed -i '0,/{/s//{\n\tchosen { bootargs-append = " cma=16M"; };/' "$DTS"
-          fi
-          echo "=== bootargs after edit ==="; grep -n 'bootargs\|cma=' "$DTS" || true
+        if grep -q 'bootargs-append' "$DTS"; then
+          # existing bootargs-append: just append cma= inside the quotes
+          sed -i 's/\(bootargs-append = "[^"]*\)"/\1 cma=16M"/' "$DTS"
         else
-          echo "::warning::AX1800 DTS not found; cma= not applied"
+          # no bootargs-append: append a merging root block at EOF (always valid)
+          printf '\n/ {\n\tchosen {\n\t\tbootargs-append = " cma=16M";\n\t};\n};\n' >> "$DTS"
         fi
+        echo "=== cma in DTS ==="; grep -n 'cma=' "$DTS" || true
+
 
     - name: Stamp version + build id
       working-directory: openwrt
