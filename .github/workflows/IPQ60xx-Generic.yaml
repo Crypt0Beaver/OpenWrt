@@ -233,15 +233,11 @@ jobs:
         # reserve 8M via the board DTS bootargs (order-safe)
         DTS=target/linux/qualcommax/dts/ipq6000-ax1800.dts
         test -f "$DTS" || { echo "::error::AX1800 DTS missing"; exit 1; }
-        if grep -q 'bootargs-append' "$DTS"; then
-          # existing bootargs-append line: insert cma= inside its quotes
-          sed -i 's/\(bootargs-append = "[^"]*\)"/\1 cma=8M"/' "$DTS"
-        else
-          # no bootargs-append: append a SEPARATE merging root block at END of file
-          printf '\n/ {\n\tchosen {\n\t\tbootargs-append = " cma=8M";\n\t};\n};\n' >> "$DTS"
-        fi
-        echo "=== cma in DTS ==="; grep -n 'cma=' "$DTS" || true
-
+        # strip any prior cma= cmdline attempts
+        sed -i 's/ cma=[0-9]*M//g' "$DTS"
+        # pin an 8 MiB CMA pool at a known-safe address in main System RAM
+        printf '\n/ {\n\treserved-memory {\n\t\twifi_cma@49000000 {\n\t\t\tcompatible = "shared-dma-pool";\n\t\t\treusable;\n\t\t\treg = <0x0 0x49000000 0x0 0x00800000>;\n\t\t\tlinux,cma-default;\n\t\t};\n\t};\n};\n' >> "$DTS"
+        echo "=== reserved-memory cma in DTS ==="; grep -n -A6 'wifi_cma' "$DTS" || true
 
 
     - name: Stamp version + build id
