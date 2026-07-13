@@ -430,12 +430,25 @@ jobs:
         cd $OPENWRT_PATH/bin/targets/*/*
         cat sha256sums
         cp $OPENWRT_PATH/.config build.config
-        # mv -f $OPENWRT_PATH/bin/packages/*/*/*.ipk packages
+
+        # --- rename firmware to include variant + repo ---
+        TAG="${OS_LABEL}-${VARIANT_LABEL}"        # e.g. immortalwrt-Wi-Fi
+        SAFE_TAG="$(printf '%s' "$TAG" | tr -d '\r\n' | sed 's/[^A-Za-z0-9._-]/-/g')"
+        for f in *xiaomi_ax1800*factory*.ubi *xiaomi_ax1800*sysupgrade*.bin; do
+          [ -e "$f" ] || continue
+          # insert the tag right before the file extension
+          base="${f%.*}"; ext="${f##*.}"
+          mv "$f" "${base}-${SAFE_TAG}.${ext}"
+          echo "renamed -> ${base}-${SAFE_TAG}.${ext}"
+        done
+        ls -la *.ubi *.bin 2>/dev/null
+
         mkdir -p packages
         find "$OPENWRT_PATH/bin/packages" -name "*.ipk" -exec mv {} packages/ \; || true
         tar -zcf Packages.tar.gz packages
         rm -rf packages feeds.buildinfo version.buildinfo
         echo "FIRMWARE_PATH=$PWD" >> $GITHUB_ENV
+
 
     - name: Upload Firmware To Artifact(将固件上传到Artifact)
       if: steps.compile.outputs.status == 'success' && env.FIRMWARE_RELEASE != 'true'
