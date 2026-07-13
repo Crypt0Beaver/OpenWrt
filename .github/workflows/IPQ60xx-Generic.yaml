@@ -209,14 +209,16 @@ jobs:
         rm -rf build_dir/target-*
 
 
-    - name: CMA children defaults + reserve 16M via DTS
+    - name: CMA children defaults + reserve 8M via DTS
       run: |
         cd $OPENWRT_PATH
         # CMA parent comes from the seed (CONFIG_KERNEL_CMA/DMA_CMA).
         # Here we only pin the CHILD symbols so syncconfig never prompts in CI.
         for f in target/linux/generic/config-*; do
-          sed -i '/CONFIG_CMA_/d' "$f"
+          sed -i '/CONFIG_CMA[ =]/d; /CONFIG_CMA is not set/d; /CONFIG_CMA_/d; /CONFIG_DMA_CMA/d' "$f"
           printf '%s\n' \
+            'CONFIG_CMA=y' \
+            'CONFIG_DMA_CMA=y' \
             '# CONFIG_CMA_DEBUG is not set' \
             '# CONFIG_CMA_DEBUGFS is not set' \
             '# CONFIG_CMA_SYSFS is not set' \
@@ -236,7 +238,7 @@ jobs:
           sed -i 's/\(bootargs-append = "[^"]*\)"/\1 cma=8M"/' "$DTS"
         else
           # no bootargs-append: append a SEPARATE merging root block at END of file
-          printf '\n/ {\n\tchosen {\n\t\tbootargs-append = " cma=16M";\n\t};\n};\n' >> "$DTS"
+          printf '\n/ {\n\tchosen {\n\t\tbootargs-append = " cma=8M";\n\t};\n};\n' >> "$DTS"
         fi
         echo "=== cma in DTS ==="; grep -n 'cma=' "$DTS" || true
 
@@ -309,6 +311,8 @@ jobs:
 
         echo "=== CMA seed (OpenWrt .config) ==="
         grep -E '^CONFIG_KERNEL_CMA=|^CONFIG_KERNEL_DMA_CMA=' .config || echo "SEED LINES MISSING"
+        grep -E '^CONFIG_CMA=|^CONFIG_DMA_CMA=' build_dir/target-*/linux-*/linux-*/.config 2>/dev/null || echo "kernel .config not built yet"
+
 
 
 
