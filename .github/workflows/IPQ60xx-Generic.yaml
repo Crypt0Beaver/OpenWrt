@@ -432,7 +432,7 @@ jobs:
         cp $OPENWRT_PATH/.config build.config
 
         # --- rename firmware to include variant + repo ---
-        TAG="${OS_LABEL}-${VARIANT_LABEL}"        # e.g. immortalwrt-Wi-Fi
+        TAG="${SOURCE_REPO}-${VARIANT_LABEL}"        # e.g. immortalwrt-Wi-Fi
         SAFE_TAG="$(printf '%s' "$TAG" | tr -d '\r\n' | sed 's/[^A-Za-z0-9._-]/-/g')"
         for f in *xiaomi_ax1800*factory*.ubi *xiaomi_ax1800*sysupgrade*.bin; do
           [ -e "$f" ] || continue
