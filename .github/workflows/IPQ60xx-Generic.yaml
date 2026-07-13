@@ -189,7 +189,9 @@ jobs:
       run: |
         cd $OPENWRT_PATH
         ./scripts/feeds update -a
-        ./scripts/feeds install -a
+        # ./scripts/feeds install -a
+        ./scripts/feeds install $(grep '^CONFIG_PACKAGE_' .config | sed 's/^CONFIG_PACKAGE_\([^=]*\)=y/\1/' | tr '\n' ' ')
+
   
     - name: Load Custom Configuration(加载自定义配置)
       run: |
