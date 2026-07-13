@@ -228,18 +228,18 @@ jobs:
             '# CONFIG_CMA_SIZE_SEL_MAX is not set' \
             'CONFIG_CMA_ALIGNMENT=8' >> "$f"
         done
-        # reserve 16M on the kernel cmdline via the board DTS bootargs
-                # reserve 16M via a merge-appended chosen node (order-safe)
+        # reserve 16M via the board DTS bootargs (order-safe)
         DTS=target/linux/qualcommax/dts/ipq6000-ax1800.dts
         test -f "$DTS" || { echo "::error::AX1800 DTS missing"; exit 1; }
         if grep -q 'bootargs-append' "$DTS"; then
-          # existing bootargs-append: just append cma= inside the quotes
+          # existing bootargs-append line: insert cma= inside its quotes
           sed -i 's/\(bootargs-append = "[^"]*\)"/\1 cma=16M"/' "$DTS"
         else
-          # no bootargs-append: append a merging root block at EOF (always valid)
+          # no bootargs-append: append a SEPARATE merging root block at END of file
           printf '\n/ {\n\tchosen {\n\t\tbootargs-append = " cma=16M";\n\t};\n};\n' >> "$DTS"
         fi
         echo "=== cma in DTS ==="; grep -n 'cma=' "$DTS" || true
+
 
 
     - name: Stamp version + build id
@@ -307,7 +307,9 @@ jobs:
         echo "=== written config version ==="
         grep CONFIG_VERSION_ .config || true
 
-        echo "=== CMA state ==="; grep -E '^CONFIG_CMA=|^CONFIG_DMA_CMA=' .config || echo "CMA NOT ENABLED"
+        echo "=== CMA seed (OpenWrt .config) ==="
+        grep -E '^CONFIG_KERNEL_CMA=|^CONFIG_KERNEL_DMA_CMA=' .config || echo "SEED LINES MISSING"
+
 
 
     # - name: Force 256M Memory Profile & Disable NSS
@@ -511,11 +513,16 @@ jobs:
           - ${{ env.VERSION_INFO }}
 
     - name: Summary
+      if: always()
       run: |
         {
           echo "## Build ${{ inputs.config_name }}"
           echo "- Source: ${REPO_URL}@${REPO_BRANCH}"
-          echo "- cma= in DTS: $(grep -o 'cma=[0-9]*M' target/linux/qualcommax/dts/ipq6000-ax1800.dts || echo MISSING)"
-          echo "- SHA256:"; echo '```'; cat "$FIRMWARE_PATH/sha256sums" 2>/dev/null | grep -E 'ubi|bin'; echo '```'
+          echo "- cma= in DTS: $(grep -o 'cma=[0-9]*M' "$OPENWRT_PATH/target/linux/qualcommax/dts/ipq6000-ax1800.dts" 2>/dev/null || echo MISSING)"
+          echo "- SHA256:"; echo '```'; cat "$FIRMWARE_PATH/sha256sums" 2>/dev/null || echo "no artifacts" | grep -E 'ubi|bin'; echo '```'
+          
+          echo "=== CMA resolved (kernel .config, after build) ==="
+          grep -E '^CONFIG_CMA=|^CONFIG_DMA_CMA=' build_dir/target-*/linux-*/linux-*/.config 2>/dev/null || echo "kernel .config not built yet"
+
         } >> "$GITHUB_STEP_SUMMARY"
 
