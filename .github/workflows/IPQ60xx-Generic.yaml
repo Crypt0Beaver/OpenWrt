@@ -20,12 +20,6 @@ on:
           - rm1800-gateway
         default: rm1800-wifi
 
-      # config_description:
-      #   description: Description shown in the release
-      #   required: true
-      #   type: string
-      #   default: Xiaomi AX1800(RM1800) Wi-Fi build
-
       release_tag:
         description: Release tag
         required: true
@@ -42,6 +36,11 @@ on:
           - https://github.com/immortalwrt/immortalwrt.git@master
           - https://github.com/breeze303/openwrt-6.x.git@main-nss
         default: https://github.com/VIKINGYFY/immortalwrt.git@main
+
+      note:
+        description: Build note (shows in run name + summary)
+        required: false
+        type: string
 
 
 permissions:
@@ -70,6 +69,10 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:        
+    - name: Build note
+      if: inputs.note != ''
+      run: echo "📝 ${{ inputs.note }}" >> "$GITHUB_STEP_SUMMARY"
+
     - name: Check Server Performance(检查服务器性能)
       run: |
         echo "Warning ⚠"
@@ -504,3 +507,13 @@ jobs:
           ### 🧊 Firmware version
           - Last source update before this build:
           - ${{ env.VERSION_INFO }}
+
+    - name: Summary
+      run: |
+        {
+          echo "## Build ${{ inputs.config_name }}"
+          echo "- Source: ${REPO_URL}@${REPO_BRANCH}"
+          echo "- cma= in DTS: $(grep -o 'cma=[0-9]*M' target/linux/qualcommax/dts/ipq6000-ax1800.dts || echo MISSING)"
+          echo "- SHA256:"; echo '```'; cat "$FIRMWARE_PATH/sha256sums" 2>/dev/null | grep -E 'ubi|bin'; echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"
+
