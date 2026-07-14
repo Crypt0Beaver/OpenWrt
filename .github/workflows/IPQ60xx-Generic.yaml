@@ -458,7 +458,7 @@ jobs:
         echo "DATE=$(date +"%Y-%m-%d %H:%M:%S")" >> $GITHUB_ENV
         echo "FILE_DATE=$(date +"%Y.%m.%d")" >> $GITHUB_ENV
 
-    - name: Verify compiled DTB has the coherent_pool bootarg
+    - name: Verify compiled DTB has the CMA reserved-memory pool
       if: always()
       run: |
         cd $OPENWRT_PATH
@@ -466,13 +466,12 @@ jobs:
         echo "DTB: $DTB"
         if [ -n "$DTB" ]; then
           DTS=$(./staging_dir/host/bin/dtc -I dtb -O dts "$DTB" 2>/dev/null)
-          echo "$DTS" | grep -A6 chosen || echo "NO chosen node"
-          echo "$DTS" | grep -i coherent_pool \
-            && echo "✅ coherent_pool present in DTB" \
-            || { echo "❌ coherent_pool MISSING from DTB"; exit 1; }
+          echo "$DTS" | grep -iA8 'reserved-memory' || echo "NO reserved-memory node"
+          echo "$DTS" | grep -iE 'wifi_cma|linux,cma-default' \
+            && echo "✅ CMA pool + cma-default present in DTB" \
+            || { echo "❌ CMA pool MISSING from DTB"; exit 1; }
         fi
 
-        
     - name: Check Space Usage(检查空间使用情况)
       if: (!cancelled())
       run: df -hT
