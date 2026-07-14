@@ -186,8 +186,18 @@ jobs:
 
     - name: Diagnose AX1800 DTS structure
       run: |
+        
         cd $OPENWRT_PATH
-        DTS=target/linux/qualcommax/dts/ipq6000-ax1800.dts
+        echo "=== locate ax1800 dts anywhere in the tree ==="
+        find target/linux -iname '*ax1800*.dts*' -o -iname '*ipq6000*.dts*' 2>/dev/null
+        echo "=== what the image profile references ==="
+        grep -rn 'DEVICE_DTS\|xiaomi_ax1800' target/linux/qualcommax/image/ 2>/dev/null
+
+        cd $OPENWRT_PATH
+        DTS=$(find target/linux -iname '*ax1800*.dts' | head -1)
+        test -n "$DTS" || { echo "::error::AX1800 DTS not found"; exit 1; }
+        echo "Patching DTS: $DTS"
+        # DTS=target/linux/qualcommax/dts/ipq6000-ax1800.dts
         echo "=== board DTS ($DTS) ==="
         cat "$DTS"
 
@@ -250,12 +260,6 @@ jobs:
             '# CONFIG_CMA_SIZE_SEL_MAX is not set' \
             'CONFIG_CMA_ALIGNMENT=8' >> "$f"
         done
-
-        cd $OPENWRT_PATH
-        echo "=== locate ax1800 dts anywhere in the tree ==="
-        find target/linux -iname '*ax1800*.dts*' -o -iname '*ipq6000*.dts*' 2>/dev/null
-        echo "=== what the image profile references ==="
-        grep -rn 'DEVICE_DTS\|xiaomi_ax1800' target/linux/qualcommax/image/ 2>/dev/null
 
         # reserve 8M via the board DTS bootargs (order-safe)
         # DTS=target/linux/qualcommax/dts/ipq6000-ax1800.dts
