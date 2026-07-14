@@ -214,6 +214,12 @@ jobs:
         echo "=== chosen / bootargs anywhere in the include chain ==="
         grep -rn 'chosen\|bootargs' target/linux/qualcommax/dts/ target/linux/qualcommax/files*/arch/arm64/boot/dts/qcom/ 2>/dev/null | head -20
         
+        cd $OPENWRT_PATH
+        echo "=== where do the nss kmods come from ==="
+        grep -rn 'qca-nss' target/linux/qualcommax/Makefile 2>/dev/null
+        grep -rn 'DEFAULT_PACKAGES\|DEVICE_PACKAGES' target/linux/qualcommax/Makefile target/linux/qualcommax/image/*.mk | grep -i nss
+        grep -rn 'nss' target/linux/qualcommax/image/Makefile 2>/dev/null
+
     - name: Check available IPQ60xx devices
       run: |
         cd $OPENWRT_PATH
@@ -305,6 +311,17 @@ jobs:
           '# CONFIG_PACKAGE_nss-firmware-ipq60xx is not set' >> .config
         sed -i 's/qca-nss-ecm//g; s/qca-nss-clients//g' target/linux/qualcommax/image/ipq60xx.mk
 
+        # 1) strip from the TARGET default packages (the real source)
+        for f in target/linux/qualcommax/Makefile target/linux/qualcommax/image/Makefile target/linux/qualcommax/image/ipq60xx.mk; do
+          [ -f "$f" ] || continue
+          # remove whole-word nss packages, keep kmod-qca-nss-dp (LAN)
+          sed -i -E 's/\bkmod-qca-nss-(ecm|drv|drv-[a-z0-9-]+|crypto)\b//g' "$f"
+          sed -i -E 's/\bqca-nss-(ecm|clients|crypto)\b//g' "$f"
+        done
+
+        # 2) strip from .config with the CORRECT kmod names, keep -dp
+        sed -i -E '/^CONFIG_PACKAGE_kmod-qca-nss-dp[= ]/!{ /^CONFIG_PACKAGE_(kmod-)?qca-nss/d }' .config
+
 
     - name: Stamp version + build id
       working-directory: openwrt
@@ -353,6 +370,11 @@ jobs:
         sed -i 's/^CONFIG_MAC80211_NSS_SUPPORT=y$/# CONFIG_MAC80211_NSS_SUPPORT is not set/' .config
         echo "=== NSS state after defconfig ==="; grep -E 'NSS|MEM_PROFILE' .config || true
 
+        # dataplane re-assert: kill every qca-nss pkg EXCEPT kmod-qca-nss-dp
+        awk '/^CONFIG_PACKAGE_(kmod-)?qca-nss/ && !/kmod-qca-nss-dp[= ]/ {
+               sub(/=y/,""); print "# "$1" is not set"; next } {print}' .config > .config.tmp && mv .config.tmp .config
+        make defconfig
+
         SOURCE_REPO="$(echo $REPO_URL | awk -F '/' '{print $(NF)}')"
         echo "SOURCE_REPO=$SOURCE_REPO" >> $GITHUB_ENV
     
@@ -388,7 +410,11 @@ jobs:
         echo "✅ NSS disabled in .config"
 
         echo "=== NSS dataplane check ==="
-        grep -E '^CONFIG_PACKAGE_(kmod-)?qca-nss' .config && echo "::warning::NSS pkgs still present" || echo "✅ NSS dataplane stripped"
+        if grep -E '^CONFIG_PACKAGE_(kmod-)?qca-nss' .config | grep -qv 'kmod-qca-nss-dp'; then
+          echo "::error::NSS dataplane still present:"; grep -E '^CONFIG_PACKAGE_(kmod-)?qca-nss' .config | grep -v 'kmod-qca-nss-dp'
+          exit 1
+        fi
+        echo "✅ NSS dataplane stripped (kmod-qca-nss-dp kept for LAN)"
 
 
 
