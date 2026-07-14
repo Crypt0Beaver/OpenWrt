@@ -238,6 +238,13 @@ jobs:
         done
         rm -rf build_dir/target-*
 
+    - name: Neuter NSS patches (VIKINGYFY)
+      run: |
+        cd $OPENWRT_PATH
+        echo "=== NSS patches present ==="; ls package/kernel/mac80211/patches/nss/ 2>/dev/null || echo "none"
+        rm -rf package/kernel/mac80211/patches/nss
+        grep -rn 'select ATH11K_NSS_SUPPORT\|select MAC80211_NSS_SUPPORT' \
+          target/linux/qualcommax/ package/kernel/mac80211/ 2>/dev/null || echo "✅ no NSS selects remain"
 
     - name: CMA children defaults + reserve 8M via DTS
       run: |
@@ -282,20 +289,6 @@ jobs:
           '# CONFIG_PACKAGE_kmod-qca-nss-drv-wifioffload is not set' \
           'CONFIG_IPQ_MEM_PROFILE_256=y' \
           'CONFIG_ATH11K_MEM_PROFILE_256M=y' >> .config
-
-    - name: Patch Makefiles to drop NSS selects (NSS fork)
-      run: |
-        cd $OPENWRT_PATH
-        sed -i 's/select ATH11K_NSS_SUPPORT/# &/g' target/linux/qualcommax/Makefile 2>/dev/null || true
-        sed -i 's/select MAC80211_NSS_SUPPORT/# &/g' package/kernel/mac80211/Makefile 2>/dev/null || true
-        grep -rn 'select.*NSS_SUPPORT' target/linux/qualcommax/ package/kernel/mac80211/ 2>/dev/null || echo "no NSS selects remain"
-    
-    - name: Disable ath11k IPQ6018 monitor rings
-      run: |
-        cd $OPENWRT_PATH
-        ATH=$(find . -path '*ath11k/core.c' | head -1)
-        echo "core.c: $ATH"
-        grep -n 'rxdma1_enable\|IPQ6018\|hw_rev' "$ATH" | head -40
 
     - name: Stamp version + build id
       working-directory: openwrt
@@ -371,6 +364,13 @@ jobs:
         grep -E '^CONFIG_KERNEL_CMA=|^CONFIG_KERNEL_DMA_CMA=' .config || echo "SEED LINES MISSING"
         grep -E '^CONFIG_CMA=|^CONFIG_DMA_CMA=' build_dir/target-*/linux-*/linux-*/.config 2>/dev/null || echo "kernel .config not built yet"
 
+        # after make defconfig + your existing NSS sed lines:
+        echo "=== NSS assertion ==="
+        if grep -qE '^CONFIG_(ATH11K_NSS_SUPPORT|MAC80211_NSS_SUPPORT)=y' .config; then
+          echo "::error::NSS still enabled after neuter — patch removal did not take"; exit 1
+        fi
+        echo "✅ NSS disabled in .config"
+
 
     - name: Validate RM1800 build configuration
       run: |
@@ -383,7 +383,14 @@ jobs:
         # Temporarily bypass the hard failure so you can see the logs
         exit 0
 
-    
+    - name: Monitor-ring recon (locate core.c post-extract)
+      run: |
+        cd $OPENWRT_PATH
+        make package/kernel/mac80211/{clean,prepare} V=s QUILT=1 2>/dev/null || true
+        ATH=$(find build_dir -path '*ath11k/core.c' | head -1)
+        echo "core.c: ${ATH:-NOT FOUND}"
+        [ -n "$ATH" ] && grep -n 'rxdma1_enable\|IPQ6018\|\.hw_rev' "$ATH" | head -40 || true
+
     - name: Cache Toolchain(缓存工具链)
       if: env.CACHE_TOOLCHAIN == 'true'
       uses: HiGarfield/cachewrtbuild@main
