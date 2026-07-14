@@ -253,19 +253,9 @@ jobs:
         # reserve 8M via the board DTS bootargs (order-safe)
         DTS=target/linux/qualcommax/dts/ipq6000-ax1800.dts
         test -f "$DTS" || { echo "::error::AX1800 DTS missing"; exit 1; }
-        # strip any prior cma= cmdline attempts
         sed -i 's/ cma=[0-9]*M//g' "$DTS"
-        # pin an 8 MiB CMA pool at a known-safe address in main System RAM
-        sed -i 's/ cma=[0-9]*M//g' "$DTS"
-        printf '\n/ {\n\treserved-memory {\n\t\twifi_cma: wifi_cma@49000000 {\n\t\t\tcompatible = "shared-dma-pool";\n\t\t\treusable;\n\t\t\treg = <0x0 0x49000000 0x0 0x01000000>;\n\t\t};\n\t};\n};\n\n&wifi {\n\tmemory-region = <&wifi_cma>;\n};\n' >> "$DTS"
+        printf '\n/ {\n\treserved-memory {\n\t\twifi_cma: wifi_cma@49000000 {\n\t\t\tcompatible = "shared-dma-pool";\n\t\t\treusable;\n\t\t\tlinux,cma-default;\n\t\t\treg = <0x0 0x49000000 0x0 0x01000000>;\n\t\t};\n\t};\n};\n' >> "$DTS"
         echo "=== reserved-memory cma in DTS ==="; grep -n -A6 'wifi_cma' "$DTS" || true
-        # DTS=target/linux/qualcommax/dts/ipq6000-ax1800.dts
-        # test -f "$DTS" || { echo "::error::AX1800 DTS missing"; exit 1; }
-        # # remove any prior cma= / reserved-memory experiments
-        # sed -i 's/ cma=[0-9]*M//g' "$DTS"
-        # # match sibling ath11k boards: size the coherent DMA pool
-        # printf '\n/ {\n\tchosen {\n\t\tbootargs-append = " coherent_pool=4M";\n\t};\n};\n' >> "$DTS"
-        # echo "=== chosen after edit ==="; grep -n 'coherent_pool\|bootargs' "$DTS" || true
 
 
     - name: Stamp version + build id
