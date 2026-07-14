@@ -298,6 +298,13 @@ jobs:
           '# CONFIG_PACKAGE_kmod-qca-nss-dp is not set' >> .config
         sed -i 's/qca-nss-drv//g; s/qca-nss-ecm//g; s/qca-nss-clients//g' target/linux/qualcommax/image/ipq60xx.mk
 
+        sed -i '/CONFIG_PACKAGE_qca-nss-ecm/d; /CONFIG_PACKAGE_qca-nss-drv=/d; /CONFIG_PACKAGE_nss-firmware-ipq60xx/d' .config
+        printf '%s\n' \
+          '# CONFIG_PACKAGE_qca-nss-ecm is not set' \
+          '# CONFIG_PACKAGE_qca-nss-drv is not set' \
+          '# CONFIG_PACKAGE_nss-firmware-ipq60xx is not set' >> .config
+        sed -i 's/qca-nss-ecm//g; s/qca-nss-clients//g' target/linux/qualcommax/image/ipq60xx.mk
+
 
     - name: Stamp version + build id
       working-directory: openwrt
