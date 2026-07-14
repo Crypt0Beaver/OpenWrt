@@ -184,6 +184,26 @@ jobs:
         restore-keys: |
           openwrt-${{ runner.os }}-
 
+    - name: Diagnose AX1800 DTS structure
+      run: |
+        cd $OPENWRT_PATH
+        DTS=target/linux/qualcommax/dts/ipq6000-ax1800.dts
+        echo "=== board DTS ($DTS) ==="
+        cat "$DTS"
+
+        echo "=== what it #includes ==="
+        grep -n '#include\|/include/' "$DTS"
+
+        echo "=== wifi node label + how it's referenced ==="
+        # find the wifi node definition and any &label references across the tree
+        grep -rn 'wifi@\|c000000\|&wifi\|q6@\|wcss' target/linux/qualcommax/dts/ target/linux/qualcommax/files*/arch/arm64/boot/dts/qcom/ 2>/dev/null | head -40
+
+        echo "=== existing reserved-memory / memory-region nodes ==="
+        grep -rn 'reserved-memory\|memory-region\|shared-dma-pool\|linux,cma' target/linux/qualcommax/dts/ target/linux/qualcommax/files*/arch/arm64/boot/dts/qcom/ 2>/dev/null | head -40
+
+        echo "=== chosen / bootargs anywhere in the include chain ==="
+        grep -rn 'chosen\|bootargs' target/linux/qualcommax/dts/ target/linux/qualcommax/files*/arch/arm64/boot/dts/qcom/ 2>/dev/null | head -20
+        
     - name: Check available IPQ60xx devices
       run: |
         cd $OPENWRT_PATH
@@ -236,7 +256,8 @@ jobs:
         # strip any prior cma= cmdline attempts
         sed -i 's/ cma=[0-9]*M//g' "$DTS"
         # pin an 8 MiB CMA pool at a known-safe address in main System RAM
-        printf '\n/ {\n\treserved-memory {\n\t\twifi_cma@49000000 {\n\t\t\tcompatible = "shared-dma-pool";\n\t\t\treusable;\n\t\t\treg = <0x0 0x49000000 0x0 0x00800000>;\n\t\t\tlinux,cma-default;\n\t\t};\n\t};\n};\n' >> "$DTS"
+        sed -i 's/ cma=[0-9]*M//g' "$DTS"
+        printf '\n/ {\n\treserved-memory {\n\t\twifi_cma: wifi_cma@49000000 {\n\t\t\tcompatible = "shared-dma-pool";\n\t\t\treusable;\n\t\t\treg = <0x0 0x49000000 0x0 0x01000000>;\n\t\t};\n\t};\n};\n\n&wifi {\n\tmemory-region = <&wifi_cma>;\n};\n' >> "$DTS"
         echo "=== reserved-memory cma in DTS ==="; grep -n -A6 'wifi_cma' "$DTS" || true
 
 
@@ -440,6 +461,18 @@ jobs:
         echo "DATE=$(date +"%Y-%m-%d %H:%M:%S")" >> $GITHUB_ENV
         echo "FILE_DATE=$(date +"%Y.%m.%d")" >> $GITHUB_ENV
 
+    - name: Verify compiled DTB has the CMA binding
+      if: always()
+      run: |
+        cd $OPENWRT_PATH
+        DTB=$(find build_dir -name 'image-ipq6000-ax1800.dtb' | head -1)
+        echo "DTB: $DTB"
+        if [ -n "$DTB" ]; then
+          # decompile and check the wifi node actually got memory-region
+          ./staging_dir/host/bin/dtc -I dtb -O dts "$DTB" 2>/dev/null | grep -A20 'wifi@c000000' | grep -iE 'memory-region|reg|compatible' || echo "no memory-region on wifi node"
+          ./staging_dir/host/bin/dtc -I dtb -O dts "$DTB" 2>/dev/null | grep -iA6 'reserved-memory' || true
+        fi
+        
     - name: Check Space Usage(检查空间使用情况)
       if: (!cancelled())
       run: df -hT
