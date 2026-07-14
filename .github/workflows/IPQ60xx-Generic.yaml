@@ -194,10 +194,10 @@ jobs:
         grep -rn 'DEVICE_DTS\|xiaomi_ax1800' target/linux/qualcommax/image/ 2>/dev/null
 
         cd $OPENWRT_PATH
-        DTS=$(find target/linux -iname '*ax1800*.dts' | head -1)
+        DTS=target/linux/qualcommax/dts/ipq6000-ax1800.dts
+        DTS=$(find target/linux -iname '*ax1800*.dts' | grep -vi 'gl-\|mt7621' | head -1)
         test -n "$DTS" || { echo "::error::AX1800 DTS not found"; exit 1; }
-        echo "Patching DTS: $DTS"
-        # DTS=target/linux/qualcommax/dts/ipq6000-ax1800.dts
+        echo "Patching DTS: $DTS"   # must print ipq6000-ax1800.dts, NOT gl-ax1800
         echo "=== board DTS ($DTS) ==="
         cat "$DTS"
 
