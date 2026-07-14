@@ -216,9 +216,9 @@ jobs:
         
         cd $OPENWRT_PATH
         echo "=== where do the nss kmods come from ==="
-        grep -rn 'qca-nss' target/linux/qualcommax/Makefile 2>/dev/null
-        grep -rn 'DEFAULT_PACKAGES\|DEVICE_PACKAGES' target/linux/qualcommax/Makefile target/linux/qualcommax/image/*.mk | grep -i nss
-        grep -rn 'nss' target/linux/qualcommax/image/Makefile 2>/dev/null
+        grep -rn 'qca-nss' target/linux/qualcommax/Makefile 2>/dev/null || true
+        grep -rn 'DEFAULT_PACKAGES\|DEVICE_PACKAGES' target/linux/qualcommax/Makefile target/linux/qualcommax/image/*.mk | grep -i nss || true
+        grep -rn 'nss' target/linux/qualcommax/image/Makefile 2>/dev/null || true
 
     - name: Check available IPQ60xx devices
       run: |
@@ -243,6 +243,14 @@ jobs:
           echo '# CONFIG_ALLOC_SKB_PAGE_FRAG_DISABLE is not set' >> "$f"
         done
         rm -rf build_dir/target-*
+
+    - name: Probe nss-dp dependency
+      run: |
+        cd $OPENWRT_PATH
+        echo "=== does kmod-qca-nss-dp depend on -drv? ==="
+        find . -path '*qca-nss-dp/Makefile' -exec grep -H -i 'DEPENDS' {} \; 2>/dev/null || true
+        find . -path '*qca-nss-drv/Makefile' -exec grep -H -i 'DEPENDS' {} \; 2>/dev/null || true
+
 
     - name: Neuter NSS patches (VIKINGYFY)
       run: |
