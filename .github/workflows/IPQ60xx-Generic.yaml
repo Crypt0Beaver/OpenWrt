@@ -250,9 +250,19 @@ jobs:
             '# CONFIG_CMA_SIZE_SEL_MAX is not set' \
             'CONFIG_CMA_ALIGNMENT=8' >> "$f"
         done
+
+        cd $OPENWRT_PATH
+        echo "=== locate ax1800 dts anywhere in the tree ==="
+        find target/linux -iname '*ax1800*.dts*' -o -iname '*ipq6000*.dts*' 2>/dev/null
+        echo "=== what the image profile references ==="
+        grep -rn 'DEVICE_DTS\|xiaomi_ax1800' target/linux/qualcommax/image/ 2>/dev/null
+
         # reserve 8M via the board DTS bootargs (order-safe)
-        DTS=target/linux/qualcommax/dts/ipq6000-ax1800.dts
-        test -f "$DTS" || { echo "::error::AX1800 DTS missing"; exit 1; }
+        # DTS=target/linux/qualcommax/dts/ipq6000-ax1800.dts
+        # test -f "$DTS" || { echo "::error::AX1800 DTS missing"; exit 1; }
+        DTS=$(find target/linux -iname '*ax1800*.dts' | head -1)
+        test -n "$DTS" || { echo "::error::AX1800 DTS not found"; exit 1; }
+        echo "Patching DTS: $DTS"
         sed -i 's/ cma=[0-9]*M//g' "$DTS"
         printf '\n/ {\n\treserved-memory {\n\t\twifi_cma: wifi_cma@49000000 {\n\t\t\tcompatible = "shared-dma-pool";\n\t\t\treusable;\n\t\t\tlinux,cma-default;\n\t\t\treg = <0x0 0x49000000 0x0 0x01000000>;\n\t\t};\n\t};\n};\n' >> "$DTS"
         echo "=== reserved-memory cma in DTS ==="; grep -n -A6 'wifi_cma' "$DTS" || true
