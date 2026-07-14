@@ -246,7 +246,7 @@ jobs:
         grep -rn 'select ATH11K_NSS_SUPPORT\|select MAC80211_NSS_SUPPORT' \
           target/linux/qualcommax/ package/kernel/mac80211/ 2>/dev/null || echo "✅ no NSS selects remain"
 
-    - name: CMA children defaults + reserve 32M via DTS
+    - name: CMA children defaults + reserve 24M via DTS
       run: |
         cd $OPENWRT_PATH
         # CMA parent comes from the seed (CONFIG_KERNEL_CMA/DMA_CMA).
@@ -268,13 +268,13 @@ jobs:
             'CONFIG_CMA_ALIGNMENT=8' >> "$f"
         done
 
-        # reserve 32M via the board DTS bootargs (order-safe)
+        # reserve 24M via the board DTS bootargs (order-safe)
         DTS=target/linux/qualcommax/dts/ipq6000-ax1800.dts
         # DTS=$(find target/linux -iname '*ax1800*.dts' | grep -vi 'gl-\|mt7621' | head -1)
         test -n "$DTS" || { echo "::error::AX1800 DTS not found"; exit 1; }
         echo "Patching DTS: $DTS"   # must print ipq6000-ax1800.dts, NOT gl-ax1800
         sed -i 's/ cma=[0-9]*M//g' "$DTS"
-        printf '\n/ {\n\treserved-memory {\n\t\twifi_cma: wifi_cma@46000000 {\n\t\t\tcompatible = "shared-dma-pool";\n\t\t\treusable;\n\t\t\tlinux,cma-default;\n\t\t\treg = <0x0 0x46000000 0x0 0x02000000>;\n\t\t};\n\t};\n};\n' >> "$DTS"
+        printf '\n/ {\n\treserved-memory {\n\t\twifi_cma: wifi_cma@46000000 {\n\t\t\tcompatible = "shared-dma-pool";\n\t\t\treusable;\n\t\t\tlinux,cma-default;\n\t\t\treg = <0x0 0x46000000 0x0 0x01800000>;\n\t\t};\n\t};\n};\n' >> "$DTS"
         echo "=== reserved-memory cma in DTS ==="; grep -n -A6 'wifi_cma' "$DTS" || true
 
     - name: Disable NSS wifi offload + pin 256M mem profile
@@ -288,6 +288,16 @@ jobs:
           '# CONFIG_PACKAGE_kmod-qca-nss-drv-wifioffload is not set' \
           'CONFIG_IPQ_MEM_PROFILE_256=y' \
           'CONFIG_ATH11K_MEM_PROFILE_256M=y' >> .config
+
+        # strip NSS dataplane packages + the profile's DEVICE_PACKAGES pulls
+        sed -i '/CONFIG_PACKAGE_.*qca-nss/d; /CONFIG_PACKAGE_kmod-qca-nss/d' .config
+        printf '%s\n' \
+          '# CONFIG_PACKAGE_qca-nss-drv is not set' \
+          '# CONFIG_PACKAGE_qca-nss-ecm is not set' \
+          '# CONFIG_PACKAGE_qca-nss-clients is not set' \
+          '# CONFIG_PACKAGE_kmod-qca-nss-dp is not set' >> .config
+        sed -i 's/qca-nss-drv//g; s/qca-nss-ecm//g; s/qca-nss-clients//g' target/linux/qualcommax/image/ipq60xx.mk
+
 
     - name: Stamp version + build id
       working-directory: openwrt
@@ -369,6 +379,10 @@ jobs:
           echo "::error::NSS still enabled after neuter — patch removal did not take"; exit 1
         fi
         echo "✅ NSS disabled in .config"
+
+        echo "=== NSS dataplane check ==="
+        grep -E '^CONFIG_PACKAGE_(kmod-)?qca-nss' .config && echo "::warning::NSS pkgs still present" || echo "✅ NSS dataplane stripped"
+
 
 
     - name: Validate RM1800 build configuration
