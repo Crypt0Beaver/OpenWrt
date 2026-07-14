@@ -283,6 +283,20 @@ jobs:
           'CONFIG_IPQ_MEM_PROFILE_256=y' \
           'CONFIG_ATH11K_MEM_PROFILE_256M=y' >> .config
 
+    - name: Patch Makefiles to drop NSS selects (NSS fork)
+      run: |
+        cd $OPENWRT_PATH
+        sed -i 's/select ATH11K_NSS_SUPPORT/# &/g' target/linux/qualcommax/Makefile 2>/dev/null || true
+        sed -i 's/select MAC80211_NSS_SUPPORT/# &/g' package/kernel/mac80211/Makefile 2>/dev/null || true
+        grep -rn 'select.*NSS_SUPPORT' target/linux/qualcommax/ package/kernel/mac80211/ 2>/dev/null || echo "no NSS selects remain"
+    
+    - name: Disable ath11k IPQ6018 monitor rings
+      run: |
+        cd $OPENWRT_PATH
+        ATH=$(find . -path '*ath11k/core.c' | head -1)
+        echo "core.c: $ATH"
+        grep -n 'rxdma1_enable\|IPQ6018\|hw_rev' "$ATH" | head -40
+
     - name: Stamp version + build id
       working-directory: openwrt
       run: |
