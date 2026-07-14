@@ -398,6 +398,20 @@ jobs:
         mixkey: ${{ env.SOURCE_REPO }}-${{ env.REPO_BRANCH }}-${{ env.DEVICE_TARGET }}-${{ env.DEVICE_SUBTARGET }}
         prefix: ${{ env.OPENWRT_PATH }}
 
+    - name: Disable IPQ6018 monitor rings
+      run: |
+        cd $OPENWRT_PATH
+        make package/kernel/mac80211/{clean,prepare} V=s QUILT=1 2>/dev/null || true
+        ATH=$(find build_dir -path '*ath11k/core.c' | head -1)
+        test -n "$ATH" || { echo "::error::core.c not found"; exit 1; }
+        awk '
+          /\.hw_rev = ATH11K_HW_IPQ6018_HW10/ {inblk=1}
+          inblk && /\.rxdma1_enable = true/ {sub(/true/,"false"); inblk=0}
+          {print}
+        ' "$ATH" > "$ATH.tmp" && mv "$ATH.tmp" "$ATH"
+        echo "=== IPQ6018 rxdma1 after patch ==="
+        grep -n 'IPQ6018_HW10' -A25 "$ATH" | grep 'rxdma1_enable'
+
     - name: Compile Firmware(开始编译固件)
       id: compile
       run: |
