@@ -22,7 +22,12 @@ echo "=== kernel config: non-interactive skb frag ==="
 for f in target/linux/generic/config-*; do
   echo '# CONFIG_ALLOC_SKB_PAGE_FRAG_DISABLE is not set' >> "$f"
 done
-rm -rf build_dir/target-*
+if [ -n "$GITHUB_ACTIONS" ]; then
+  echo "CI detected → full target rebuild"
+  rm -rf build_dir/target-*
+else
+  echo "local → keeping build_dir for incremental"
+fi
 
 echo "=== neuter NSS mac80211 patches ==="
 rm -rf package/kernel/mac80211/patches/nss
@@ -83,13 +88,13 @@ if grep -E '^CONFIG_PACKAGE_(kmod-)?qca-nss' .config | grep -Eqv 'kmod-qca-nss-(
   echo "::error::unexpected NSS pkg:"; grep -E '^CONFIG_PACKAGE_(kmod-)?qca-nss' .config | grep -Ev 'kmod-qca-nss-(dp|drv)=y'; exit 1; fi
 echo "✅ NSS trimmed (dp+drv kept for LAN)"
 
-echo "=== extract qca-nss-drv + de-Werror the source ==="
-make package/qca-nss/qca-nss-drv/prepare V=s QUILT=1 2>/dev/null || true
-find build_dir -path '*qca-nss-drv*' \( -name 'Makefile' -o -name '*.mk' -o -name 'Kbuild' \) \
-  -exec sed -i 's/-Werror[^ ]*//g' {} \; 2>/dev/null || true
-# belt-and-suspenders: neutralize any ccflags -Werror in the source
-find build_dir -path '*qca-nss-drv*' -name 'Makefile' \
-  -exec sed -i 's/\(ccflags-y[[:space:]]*+\?=\)/\1 -Wno-error /g' {} \; 2>/dev/null || true
+echo "=== extract qca-nss-drv + delete dead function ==="
+make package/qca-nss/qca-nss-drv/{clean,prepare} V=s QUILT=1 2>/dev/null || true
+
+DRV=$(find build_dir -path '*qca-nss-drv*' -type d -name 'qca-nss-drv-*' | head -1)
+[ -n "$DRV" ] && [ -f "$DRV/nss_rps.c" ] && \
+  sed -i '/^static nss_tx_status_t nss_rps_ipv4_hash_bitmap_cfg/,/^}/d' "$DRV/nss_rps.c"
+
 
 echo "=== monitor rings off (IPQ6018) ==="
 make package/kernel/mac80211/{clean,prepare} V=s QUILT=1 2>/dev/null || true
