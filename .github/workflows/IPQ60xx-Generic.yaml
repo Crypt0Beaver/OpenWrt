@@ -236,6 +236,16 @@ jobs:
         [ -e files ] && mv files $OPENWRT_PATH/files
         cp $CONFIG_FILE $OPENWRT_PATH/.config
 
+    - name: Relax -Werror on qca-nss-drv (unused-function)
+      run: |
+        cd $OPENWRT_PATH
+        MK=$(find . -path '*qca-nss-drv/Makefile' | head -1)
+        echo "patching: $MK"
+        # append a no-error flag to whatever CFLAGS the package passes to the kernel module build
+        grep -q 'Wno-error=unused-function' "$MK" || \
+          sed -i 's/\(EXTRA_CFLAGS[[:space:]]*[:+]=\)/\1 -Wno-error=unused-function -Wno-unused-function /' "$MK"
+        grep -n 'EXTRA_CFLAGS\|MAKE_OPTS\|KBUILD' "$MK" || true
+
     - name: Fix kernel config for non-interactive build
       run: |
         cd $OPENWRT_PATH
