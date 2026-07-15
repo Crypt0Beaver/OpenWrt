@@ -230,115 +230,21 @@ jobs:
         cd $OPENWRT_PATH
         ./scripts/feeds update -a
         ./scripts/feeds install -a
-  
-    - name: Load Custom Configuration(加载自定义配置)
-      run: |
-        [ -e files ] && mv files $OPENWRT_PATH/files
-        cp $CONFIG_FILE $OPENWRT_PATH/.config
 
-    - name: Strip -Werror from qca-nss-drv
+    - name: Apply RM1800 mutations
       run: |
         cd $OPENWRT_PATH
-        # the driver source ships a kbuild Makefile that hard-sets -Werror; remove it
-        for f in $(grep -rl 'Werror' package/qca-nss/qca-nss-drv/ feeds/*/qca-nss/qca-nss-drv/ 2>/dev/null); do
-          echo "de-Werror: $f"
-          sed -i 's/-Werror[^ ]*//g' "$f"
-        done
-        # also catch the extracted build tree if it exists this run
-        find build_dir -path '*qca-nss-drv*' -name 'Makefile*' -exec sed -i 's/-Werror[^ ]*//g' {} \; 2>/dev/null || true
+        # mutate.sh lives in the workflow repo (checked out at $GITHUB_WORKSPACE)
+        CONFIG_FILE="$GITHUB_WORKSPACE/configs/${{ inputs.config_name }}.config" \
+          "$GITHUB_WORKSPACE/scripts/mutate.sh" "${{ inputs.config_name }}"
 
-
-    - name: Fix kernel config for non-interactive build
+    - name: Read device vars into env
       run: |
         cd $OPENWRT_PATH
-        for f in target/linux/generic/config-*; do
-          echo '# CONFIG_ALLOC_SKB_PAGE_FRAG_DISABLE is not set' >> "$f"
-        done
-        rm -rf build_dir/target-*
-
-    - name: Probe nss-dp dependency
-      run: |
-        cd $OPENWRT_PATH
-        echo "=== does kmod-qca-nss-dp depend on -drv? ==="
-        find . -path '*qca-nss-dp/Makefile' -exec grep -H -i 'DEPENDS' {} \; 2>/dev/null || true
-        find . -path '*qca-nss-drv/Makefile' -exec grep -H -i 'DEPENDS' {} \; 2>/dev/null || true
-
-
-    - name: Neuter NSS patches (VIKINGYFY)
-      run: |
-        cd $OPENWRT_PATH
-        echo "=== NSS patches present ==="; ls package/kernel/mac80211/patches/nss/ 2>/dev/null || echo "none"
-        rm -rf package/kernel/mac80211/patches/nss
-        grep -rn 'select ATH11K_NSS_SUPPORT\|select MAC80211_NSS_SUPPORT' \
-          target/linux/qualcommax/ package/kernel/mac80211/ 2>/dev/null || echo "✅ no NSS selects remain"
-
-    - name: CMA children defaults + reserve 24M via DTS
-      run: |
-        cd $OPENWRT_PATH
-        # CMA parent comes from the seed (CONFIG_KERNEL_CMA/DMA_CMA).
-        # Here we only pin the CHILD symbols so syncconfig never prompts in CI.
-        for f in target/linux/generic/config-*; do
-          sed -i '/CONFIG_CMA[ =]/d; /CONFIG_CMA is not set/d; /CONFIG_CMA_/d; /CONFIG_DMA_CMA/d' "$f"
-          printf '%s\n' \
-            'CONFIG_CMA=y' \
-            'CONFIG_DMA_CMA=y' \
-            '# CONFIG_CMA_DEBUG is not set' \
-            '# CONFIG_CMA_DEBUGFS is not set' \
-            '# CONFIG_CMA_SYSFS is not set' \
-            'CONFIG_CMA_AREAS=7' \
-            'CONFIG_CMA_SIZE_MBYTES=0' \
-            'CONFIG_CMA_SIZE_SEL_MBYTES=y' \
-            '# CONFIG_CMA_SIZE_SEL_PERCENTAGE is not set' \
-            '# CONFIG_CMA_SIZE_SEL_MIN is not set' \
-            '# CONFIG_CMA_SIZE_SEL_MAX is not set' \
-            'CONFIG_CMA_ALIGNMENT=8' >> "$f"
-        done
-
-        # reserve 24M via the board DTS bootargs (order-safe)
-        DTS=target/linux/qualcommax/dts/ipq6000-ax1800.dts
-        # DTS=$(find target/linux -iname '*ax1800*.dts' | grep -vi 'gl-\|mt7621' | head -1)
-        test -n "$DTS" || { echo "::error::AX1800 DTS not found"; exit 1; }
-        echo "Patching DTS: $DTS"   # must print ipq6000-ax1800.dts, NOT gl-ax1800
-        sed -i 's/ cma=[0-9]*M//g' "$DTS"
-        printf '\n/ {\n\treserved-memory {\n\t\twifi_cma: wifi_cma@46000000 {\n\t\t\tcompatible = "shared-dma-pool";\n\t\t\treusable;\n\t\t\tlinux,cma-default;\n\t\t\treg = <0x0 0x46000000 0x0 0x01800000>;\n\t\t};\n\t};\n};\n' >> "$DTS"
-        echo "=== reserved-memory cma in DTS ==="; grep -n -A6 'wifi_cma' "$DTS" || true
-
-    - name: Disable NSS wifi offload + pin 256M mem profile
-      run: |
-                cd $OPENWRT_PATH
-
-                # --- wifi-side NSS off + pin mem profiles ---
-                sed -i '/CONFIG_ATH11K_NSS_SUPPORT/d; /CONFIG_NSS_DRV_WIFIOFFLOAD_ENABLE/d; /CONFIG_MAC80211_NSS_SUPPORT/d; /CONFIG_PACKAGE_kmod-qca-nss-drv-wifioffload/d; /CONFIG_IPQ_MEM_PROFILE/d; /CONFIG_ATH11K_MEM_PROFILE/d' .config
-                printf '%s\n' \
-                  '# CONFIG_ATH11K_NSS_SUPPORT is not set' \
-                  '# CONFIG_NSS_DRV_WIFIOFFLOAD_ENABLE is not set' \
-                  '# CONFIG_MAC80211_NSS_SUPPORT is not set' \
-                  '# CONFIG_PACKAGE_kmod-qca-nss-drv-wifioffload is not set' \
-                  'CONFIG_IPQ_MEM_PROFILE_256=y' \
-                  'CONFIG_ATH11K_MEM_PROFILE_256M=y' >> .config
-
-                # --- dataplane strip at the TARGET source (qualcommax/Makefile lines 19-36) ---
-                # KEEP: kmod-qca-nss-dp (LAN ports), kmod-qca-nss-drv (core, dp depends on it), kmod-qca-ssdk (switch/PHY)
-                # DROP: ecm (offload engine) + all drv-* submodules (gre/pptp/l2tp/vlan-mgr/vxlan/etc)
-                for f in target/linux/qualcommax/Makefile target/linux/qualcommax/image/Makefile target/linux/qualcommax/image/ipq60xx.mk; do
-                  [ -f "$f" ] || continue
-                  sed -i -E 's/\bkmod-qca-nss-ecm\b//g' "$f"
-                  sed -i -E 's/\bkmod-qca-nss-drv-[a-z0-9-]+\b//g' "$f"
-                  sed -i -E 's/\bkmod-qca-nss-crypto\b//g' "$f"
-                  sed -i -E 's/\bqca-nss-(ecm|clients|crypto)\b//g' "$f"
-                done
-
-                # --- .config strip: drop ecm + drv-* submodules, PROTECT dp/drv/ssdk ---
-                sed -i -E '/^CONFIG_PACKAGE_kmod-qca-nss-ecm[= ]/d' .config
-                sed -i -E '/^CONFIG_PACKAGE_kmod-qca-nss-drv-[a-z0-9-]+[= ]/d' .config
-                sed -i -E '/^CONFIG_PACKAGE_kmod-qca-nss-crypto[= ]/d' .config
-                printf '%s\n' \
-                  'CONFIG_PACKAGE_kmod-qca-nss-drv=y' \
-                  'CONFIG_PACKAGE_kmod-qca-nss-dp=y' \
-                  'CONFIG_PACKAGE_kmod-qca-ssdk=y' \
-                  '# CONFIG_PACKAGE_kmod-qca-nss-ecm is not set' >> .config
-
-
+        echo "SOURCE_REPO=$(echo $REPO_URL | awk -F '/' '{print $NF}')" >> $GITHUB_ENV
+        echo "DEVICE_TARGET=$(grep '^CONFIG_TARGET_BOARD=' .config | cut -d'\"' -f2)" >> $GITHUB_ENV
+        echo "DEVICE_SUBTARGET=$(grep '^CONFIG_TARGET_SUBTARGET=' .config | cut -d'\"' -f2)" >> $GITHUB_ENV
+        echo "DEVICE_PROFILE=$(grep '^CONFIG_TARGET_PROFILE=' .config | cut -d'\"' -f2)" >> $GITHUB_ENV
 
     - name: Stamp version + build id
       working-directory: openwrt
@@ -376,67 +282,9 @@ jobs:
         EOF
     
         echo "Stamped: ${SAFE_OS} ${SAFE_VER}"
-    
-    - name: Resolve config and check selected device
-      run: |
-        cd $OPENWRT_PATH
+
         make defconfig
-
-        sed -i 's/^CONFIG_ATH11K_NSS_SUPPORT=y$/# CONFIG_ATH11K_NSS_SUPPORT is not set/' .config
-        sed -i 's/^CONFIG_NSS_DRV_WIFIOFFLOAD_ENABLE=y$/# CONFIG_NSS_DRV_WIFIOFFLOAD_ENABLE is not set/' .config
-        sed -i 's/^CONFIG_MAC80211_NSS_SUPPORT=y$/# CONFIG_MAC80211_NSS_SUPPORT is not set/' .config
-        echo "=== NSS state after defconfig ==="; grep -E 'NSS|MEM_PROFILE' .config || true
-
-        # dataplane re-assert: kill every qca-nss pkg EXCEPT kmod-qca-nss-dp
-        awk '/^CONFIG_PACKAGE_(kmod-)?qca-nss/ && !/kmod-qca-nss-(dp|drv)[= ]/ {
-               sub(/=y/,""); print "# "$1" is not set"; next } {print}' .config > .config.tmp && mv .config.tmp .config
-        make defconfig
-
-        SOURCE_REPO="$(echo $REPO_URL | awk -F '/' '{print $(NF)}')"
-        echo "SOURCE_REPO=$SOURCE_REPO" >> $GITHUB_ENV
     
-        DEVICE_TARGET=$(grep '^CONFIG_TARGET_BOARD=' .config | cut -d'"' -f2)
-        DEVICE_SUBTARGET=$(grep '^CONFIG_TARGET_SUBTARGET=' .config | cut -d'"' -f2)
-        DEVICE_PROFILE=$(grep '^CONFIG_TARGET_PROFILE=' .config | cut -d'"' -f2)
-    
-        echo "DEVICE_TARGET=$DEVICE_TARGET" >> $GITHUB_ENV
-        echo "DEVICE_SUBTARGET=$DEVICE_SUBTARGET" >> $GITHUB_ENV
-        echo "DEVICE_PROFILE=$DEVICE_PROFILE" >> $GITHUB_ENV
-    
-        echo "=== selected target ==="
-        grep -E "CONFIG_TARGET_(BOARD|SUBTARGET|PROFILE)=" .config || true
-    
-        echo "=== selected ipq60xx devices ==="
-        grep -E "CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_.*=y" .config || true
-    
-        echo "=== available xiaomi/redmi device defines ==="
-        grep -n -B5 -A20 "define Device/.*\(xiaomi\|redmi\|ax1800\)" target/linux/qualcommax/image/ipq60xx.mk || true
-
-        echo "=== written config version ==="
-        grep CONFIG_VERSION_ .config || true
-
-        echo "=== CMA seed (OpenWrt .config) ==="
-        grep -E '^CONFIG_KERNEL_CMA=|^CONFIG_KERNEL_DMA_CMA=' .config || echo "SEED LINES MISSING"
-        grep -E '^CONFIG_CMA=|^CONFIG_DMA_CMA=' build_dir/target-*/linux-*/linux-*/.config 2>/dev/null || echo "kernel .config not built yet"
-
-        # after make defconfig + your existing NSS sed lines:
-        echo "=== NSS assertion ==="
-        if grep -qE '^CONFIG_(ATH11K_NSS_SUPPORT|MAC80211_NSS_SUPPORT)=y' .config; then
-          echo "::error::NSS still enabled after neuter — patch removal did not take"; exit 1
-        fi
-        echo "✅ NSS disabled in .config"
-
-        echo "=== NSS dataplane check ==="
-        # allowed for LAN: kmod-qca-nss-dp, kmod-qca-nss-drv (core), kmod-qca-ssdk
-        if grep -E '^CONFIG_PACKAGE_(kmod-)?qca-nss' .config | grep -Eqv 'kmod-qca-nss-(dp|drv)=y'; then
-          echo "::error::unexpected NSS pkg present:"
-          grep -E '^CONFIG_PACKAGE_(kmod-)?qca-nss' .config | grep -Ev 'kmod-qca-nss-(dp|drv)=y'
-          exit 1
-        fi
-        echo "✅ NSS trimmed (kept dp+drv for LAN; ecm + submodules stripped)"
-
-
-
 
     - name: Validate RM1800 build configuration
       run: |
@@ -448,15 +296,7 @@ jobs:
         
         # Temporarily bypass the hard failure so you can see the logs
         exit 0
-
-    - name: Monitor-ring recon (locate core.c post-extract)
-      run: |
-        cd $OPENWRT_PATH
-        make package/kernel/mac80211/{clean,prepare} V=s QUILT=1 2>/dev/null || true
-        ATH=$(find build_dir -path '*ath11k/core.c' | head -1)
-        echo "core.c: ${ATH:-NOT FOUND}"
-        [ -n "$ATH" ] && grep -n 'rxdma1_enable\|IPQ6018\|\.hw_rev' "$ATH" | head -40 || true
-
+        
     - name: Cache Toolchain(缓存工具链)
       if: env.CACHE_TOOLCHAIN == 'true'
       uses: HiGarfield/cachewrtbuild@main
@@ -464,21 +304,7 @@ jobs:
         ccache: false
         mixkey: ${{ env.SOURCE_REPO }}-${{ env.REPO_BRANCH }}-${{ env.DEVICE_TARGET }}-${{ env.DEVICE_SUBTARGET }}
         prefix: ${{ env.OPENWRT_PATH }}
-
-    - name: Disable IPQ6018 monitor rings
-      run: |
-        cd $OPENWRT_PATH
-        make package/kernel/mac80211/{clean,prepare} V=s QUILT=1 2>/dev/null || true
-        ATH=$(find build_dir -path '*ath11k/core.c' | head -1)
-        test -n "$ATH" || { echo "::error::core.c not found"; exit 1; }
-        awk '
-          /\.hw_rev = ATH11K_HW_IPQ6018_HW10/ {inblk=1}
-          inblk && /\.rxdma1_enable = true/ {sub(/true/,"false"); inblk=0}
-          {print}
-        ' "$ATH" > "$ATH.tmp" && mv "$ATH.tmp" "$ATH"
-        echo "=== IPQ6018 rxdma1 after patch ==="
-        grep -n 'IPQ6018_HW10' -A25 "$ATH" | grep 'rxdma1_enable'
-
+        
     - name: Compile Firmware(开始编译固件)
       id: compile
       run: |
