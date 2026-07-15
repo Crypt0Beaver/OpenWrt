@@ -293,42 +293,39 @@ jobs:
 
     - name: Disable NSS wifi offload + pin 256M mem profile
       run: |
-        cd $OPENWRT_PATH
-        sed -i '/CONFIG_ATH11K_NSS_SUPPORT/d; /CONFIG_NSS_DRV_WIFIOFFLOAD_ENABLE/d; /CONFIG_MAC80211_NSS_SUPPORT/d; /CONFIG_PACKAGE_kmod-qca-nss-drv-wifioffload/d; /CONFIG_IPQ_MEM_PROFILE/d; /CONFIG_ATH11K_MEM_PROFILE/d' .config
-        printf '%s\n' \
-          '# CONFIG_ATH11K_NSS_SUPPORT is not set' \
-          '# CONFIG_NSS_DRV_WIFIOFFLOAD_ENABLE is not set' \
-          '# CONFIG_MAC80211_NSS_SUPPORT is not set' \
-          '# CONFIG_PACKAGE_kmod-qca-nss-drv-wifioffload is not set' \
-          'CONFIG_IPQ_MEM_PROFILE_256=y' \
-          'CONFIG_ATH11K_MEM_PROFILE_256M=y' >> .config
+                cd $OPENWRT_PATH
 
-        # strip NSS dataplane packages + the profile's DEVICE_PACKAGES pulls
-        sed -i '/CONFIG_PACKAGE_.*qca-nss/d; /CONFIG_PACKAGE_kmod-qca-nss/d' .config
-        printf '%s\n' \
-          '# CONFIG_PACKAGE_qca-nss-drv is not set' \
-          '# CONFIG_PACKAGE_qca-nss-ecm is not set' \
-          '# CONFIG_PACKAGE_qca-nss-clients is not set' \
-          '# CONFIG_PACKAGE_kmod-qca-nss-dp is not set' >> .config
-        sed -i 's/qca-nss-drv//g; s/qca-nss-ecm//g; s/qca-nss-clients//g' target/linux/qualcommax/image/ipq60xx.mk
+                # --- wifi-side NSS off + pin mem profiles ---
+                sed -i '/CONFIG_ATH11K_NSS_SUPPORT/d; /CONFIG_NSS_DRV_WIFIOFFLOAD_ENABLE/d; /CONFIG_MAC80211_NSS_SUPPORT/d; /CONFIG_PACKAGE_kmod-qca-nss-drv-wifioffload/d; /CONFIG_IPQ_MEM_PROFILE/d; /CONFIG_ATH11K_MEM_PROFILE/d' .config
+                printf '%s\n' \
+                  '# CONFIG_ATH11K_NSS_SUPPORT is not set' \
+                  '# CONFIG_NSS_DRV_WIFIOFFLOAD_ENABLE is not set' \
+                  '# CONFIG_MAC80211_NSS_SUPPORT is not set' \
+                  '# CONFIG_PACKAGE_kmod-qca-nss-drv-wifioffload is not set' \
+                  'CONFIG_IPQ_MEM_PROFILE_256=y' \
+                  'CONFIG_ATH11K_MEM_PROFILE_256M=y' >> .config
 
-        sed -i '/CONFIG_PACKAGE_qca-nss-ecm/d; /CONFIG_PACKAGE_qca-nss-drv=/d; /CONFIG_PACKAGE_nss-firmware-ipq60xx/d' .config
-        printf '%s\n' \
-          '# CONFIG_PACKAGE_qca-nss-ecm is not set' \
-          '# CONFIG_PACKAGE_qca-nss-drv is not set' \
-          '# CONFIG_PACKAGE_nss-firmware-ipq60xx is not set' >> .config
-        sed -i 's/qca-nss-ecm//g; s/qca-nss-clients//g' target/linux/qualcommax/image/ipq60xx.mk
+                # --- dataplane strip at the TARGET source (qualcommax/Makefile lines 19-36) ---
+                # KEEP: kmod-qca-nss-dp (LAN ports), kmod-qca-nss-drv (core, dp depends on it), kmod-qca-ssdk (switch/PHY)
+                # DROP: ecm (offload engine) + all drv-* submodules (gre/pptp/l2tp/vlan-mgr/vxlan/etc)
+                for f in target/linux/qualcommax/Makefile target/linux/qualcommax/image/Makefile target/linux/qualcommax/image/ipq60xx.mk; do
+                  [ -f "$f" ] || continue
+                  sed -i -E 's/\bkmod-qca-nss-ecm\b//g' "$f"
+                  sed -i -E 's/\bkmod-qca-nss-drv-[a-z0-9-]+\b//g' "$f"
+                  sed -i -E 's/\bkmod-qca-nss-crypto\b//g' "$f"
+                  sed -i -E 's/\bqca-nss-(ecm|clients|crypto)\b//g' "$f"
+                done
 
-        # 1) strip from the TARGET default packages (the real source)
-        for f in target/linux/qualcommax/Makefile target/linux/qualcommax/image/Makefile target/linux/qualcommax/image/ipq60xx.mk; do
-          [ -f "$f" ] || continue
-          # remove whole-word nss packages, keep kmod-qca-nss-dp (LAN)
-          sed -i -E 's/\bkmod-qca-nss-(ecm|drv|drv-[a-z0-9-]+|crypto)\b//g' "$f"
-          sed -i -E 's/\bqca-nss-(ecm|clients|crypto)\b//g' "$f"
-        done
+                # --- .config strip: drop ecm + drv-* submodules, PROTECT dp/drv/ssdk ---
+                sed -i -E '/^CONFIG_PACKAGE_kmod-qca-nss-ecm[= ]/d' .config
+                sed -i -E '/^CONFIG_PACKAGE_kmod-qca-nss-drv-[a-z0-9-]+[= ]/d' .config
+                sed -i -E '/^CONFIG_PACKAGE_kmod-qca-nss-crypto[= ]/d' .config
+                printf '%s\n' \
+                  'CONFIG_PACKAGE_kmod-qca-nss-drv=y' \
+                  'CONFIG_PACKAGE_kmod-qca-nss-dp=y' \
+                  'CONFIG_PACKAGE_kmod-qca-ssdk=y' \
+                  '# CONFIG_PACKAGE_kmod-qca-nss-ecm is not set' >> .config
 
-        # 2) strip from .config with the CORRECT kmod names, keep -dp
-        sed -i -E '/^CONFIG_PACKAGE_kmod-qca-nss-dp[= ]/!{ /^CONFIG_PACKAGE_(kmod-)?qca-nss/d }' .config
 
 
     - name: Stamp version + build id
@@ -379,7 +376,7 @@ jobs:
         echo "=== NSS state after defconfig ==="; grep -E 'NSS|MEM_PROFILE' .config || true
 
         # dataplane re-assert: kill every qca-nss pkg EXCEPT kmod-qca-nss-dp
-        awk '/^CONFIG_PACKAGE_(kmod-)?qca-nss/ && !/kmod-qca-nss-dp[= ]/ {
+        awk '/^CONFIG_PACKAGE_(kmod-)?qca-nss/ && !/kmod-qca-nss-(dp|drv)[= ]/ {
                sub(/=y/,""); print "# "$1" is not set"; next } {print}' .config > .config.tmp && mv .config.tmp .config
         make defconfig
 
