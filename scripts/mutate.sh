@@ -83,6 +83,14 @@ if grep -E '^CONFIG_PACKAGE_(kmod-)?qca-nss' .config | grep -Eqv 'kmod-qca-nss-(
   echo "::error::unexpected NSS pkg:"; grep -E '^CONFIG_PACKAGE_(kmod-)?qca-nss' .config | grep -Ev 'kmod-qca-nss-(dp|drv)=y'; exit 1; fi
 echo "✅ NSS trimmed (dp+drv kept for LAN)"
 
+echo "=== extract qca-nss-drv + de-Werror the source ==="
+make package/qca-nss/qca-nss-drv/prepare V=s QUILT=1 2>/dev/null || true
+find build_dir -path '*qca-nss-drv*' \( -name 'Makefile' -o -name '*.mk' -o -name 'Kbuild' \) \
+  -exec sed -i 's/-Werror[^ ]*//g' {} \; 2>/dev/null || true
+# belt-and-suspenders: neutralize any ccflags -Werror in the source
+find build_dir -path '*qca-nss-drv*' -name 'Makefile' \
+  -exec sed -i 's/\(ccflags-y[[:space:]]*+\?=\)/\1 -Wno-error /g' {} \; 2>/dev/null || true
+
 echo "=== monitor rings off (IPQ6018) ==="
 make package/kernel/mac80211/{clean,prepare} V=s QUILT=1 2>/dev/null || true
 ATH=$(find build_dir -path '*ath11k/core.c' | head -1)
