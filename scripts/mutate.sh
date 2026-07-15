@@ -43,11 +43,29 @@ for f in target/linux/generic/config-*; do
     '# CONFIG_CMA_SIZE_SEL_MIN is not set' \
     '# CONFIG_CMA_SIZE_SEL_MAX is not set' 'CONFIG_CMA_ALIGNMENT=8' >> "$f"
 done
+# DTS=$(find target/linux -iname '*ax1800*.dts' | grep -vi 'gl-\|mt7621' | head -1)
+# test -n "$DTS" || { echo "::error::AX1800 DTS not found"; exit 1; }
+# echo "Patching DTS: $DTS"
+# sed -i 's/ cma=[0-9]*M//g' "$DTS"
+# grep -q wifi_cma "$DTS" || printf '\n/ {\n\treserved-memory {\n\t\twifi_cma: wifi_cma@46000000 {\n\t\t\tcompatible = "shared-dma-pool";\n\t\t\treusable;\n\t\t\tlinux,cma-default;\n\t\t\treg = <0x0 0x46000000 0x0 0x02000000>;\n\t\t};\n\t};\n};\n' >> "$DTS"
 DTS=$(find target/linux -iname '*ax1800*.dts' | grep -vi 'gl-\|mt7621' | head -1)
 test -n "$DTS" || { echo "::error::AX1800 DTS not found"; exit 1; }
-echo "Patching DTS: $DTS"
 sed -i 's/ cma=[0-9]*M//g' "$DTS"
-grep -q wifi_cma "$DTS" || printf '\n/ {\n\treserved-memory {\n\t\twifi_cma: wifi_cma@46000000 {\n\t\t\tcompatible = "shared-dma-pool";\n\t\t\treusable;\n\t\t\tlinux,cma-default;\n\t\t\treg = <0x0 0x46000000 0x0 0x02000000>;\n\t\t};\n\t};\n};\n' >> "$DTS"
+sed -i '/\/\* RM1800-CMA START \*\//,/\/\* RM1800-CMA END \*\//d' "$DTS"   # nuke any prior node, every run
+cat >> "$DTS" <<'EOF'
+/* RM1800-CMA START */
+/ {
+	reserved-memory {
+		wifi_cma: wifi_cma@46000000 {
+			compatible = "shared-dma-pool";
+			reusable;
+			linux,cma-default;
+			reg = <0x0 0x46000000 0x0 0x02000000>;   /* 32M */
+		};
+	};
+};
+/* RM1800-CMA END */
+EOF
 
 echo "=== NSS: wifi-side off + pin mem profiles ==="
 sed -i '/CONFIG_ATH11K_NSS_SUPPORT/d; /CONFIG_NSS_DRV_WIFIOFFLOAD_ENABLE/d; /CONFIG_MAC80211_NSS_SUPPORT/d; /CONFIG_PACKAGE_kmod-qca-nss-drv-wifioffload/d; /CONFIG_IPQ_MEM_PROFILE/d; /CONFIG_ATH11K_MEM_PROFILE/d' .config
