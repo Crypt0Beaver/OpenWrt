@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
-cd "$(dirname "$0")"
 CONFIG="${1:-rm1800-wifi}"
-~/rm1800-build/scripts/mutate.sh "$CONFIG"   # the ONE shared script, from the symlinked repo clone
+OPENWRT="${OPENWRT:-$HOME/openwrt}"
+HERE="$(cd "$(dirname "$0")" && pwd)"   # repo root, where this script + scripts/ live
+
+cd "$OPENWRT"
+CONFIG_FILE="$HERE/configs/${CONFIG}.config" "$HERE/scripts/mutate.sh" "$CONFIG"
 make -j$(nproc) || make -j1 V=s
