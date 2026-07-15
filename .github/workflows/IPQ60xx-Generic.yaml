@@ -415,11 +415,14 @@ jobs:
         echo "✅ NSS disabled in .config"
 
         echo "=== NSS dataplane check ==="
-        if grep -E '^CONFIG_PACKAGE_(kmod-)?qca-nss' .config | grep -qv 'kmod-qca-nss-dp'; then
-          echo "::error::NSS dataplane still present:"; grep -E '^CONFIG_PACKAGE_(kmod-)?qca-nss' .config | grep -v 'kmod-qca-nss-dp'
+        # allowed for LAN: kmod-qca-nss-dp, kmod-qca-nss-drv (core), kmod-qca-ssdk
+        if grep -E '^CONFIG_PACKAGE_(kmod-)?qca-nss' .config | grep -Eqv 'kmod-qca-nss-(dp|drv)=y'; then
+          echo "::error::unexpected NSS pkg present:"
+          grep -E '^CONFIG_PACKAGE_(kmod-)?qca-nss' .config | grep -Ev 'kmod-qca-nss-(dp|drv)=y'
           exit 1
         fi
-        echo "✅ NSS dataplane stripped (kmod-qca-nss-dp kept for LAN)"
+        echo "✅ NSS trimmed (kept dp+drv for LAN; ecm + submodules stripped)"
+
 
 
 
