@@ -32,7 +32,7 @@ fi
 echo "=== neuter NSS mac80211 patches ==="
 rm -rf package/kernel/mac80211/patches/nss
 
-echo "=== CMA children + 16M reserved-memory node @ 0x46000000 ==="
+echo "=== CMA children + 24M reserved-memory node @ 0x46000000 ==="
 for f in target/linux/generic/config-*; do
   sed -i '/CONFIG_CMA[ =]/d; /CONFIG_CMA is not set/d; /CONFIG_CMA_/d; /CONFIG_DMA_CMA/d' "$f"
   printf '%s\n' 'CONFIG_CMA=y' 'CONFIG_DMA_CMA=y' \
@@ -61,7 +61,7 @@ cat >> "$DTS" <<'EOF'
 			compatible = "shared-dma-pool";
 			reusable;
 			linux,cma-default;
-			reg = <0x0 0x46000000 0x0 0x01000000>;
+			reg = <0x0 0x46000000 0x0 0x01800000>;
 		};
 	};
 };
@@ -119,34 +119,26 @@ if grep -E '^CONFIG_PACKAGE_(kmod-)?qca-nss' .config | grep -Eqv 'kmod-qca-nss-d
  echo "::error::unexpected NSS pkg:"; grep -E '^CONFIG_PACKAGE_(kmod-)?qca-nss' .config | grep -Ev 'kmod-qca-nss-dp=y'; exit 1; fi
 echo "✅ NSS trimmed to standalone dp+ssdk (no drv/core)"
 
-echo "=== monitor rings off (IPQ6018) ==="
-make package/kernel/mac80211/{clean,prepare} V=s QUILT=1 2>/dev/null || true
+echo "=== ath11k IPQ6018: mon rings off + coldboot cal off ==="
 ATH=$(find build_dir -path '*ath11k/core.c' | head -1)
 if [ -n "$ATH" ]; then
-  awk '/\.hw_rev = ATH11K_HW_IPQ6018_HW10/{i=1} i&&/\.rxdma1_enable = true/{sub(/true/,"false");i=0} {print}' "$ATH" > "$ATH.tmp" && mv "$ATH.tmp" "$ATH"
-  grep -n 'IPQ6018_HW10' -A25 "$ATH" | grep rxdma1_enable || true
+  awk '/\.hw_rev = ATH11K_HW_IPQ6018_HW10/{i=1}
+       i&&/\.rxdma1_enable = true/{sub(/true/,"false")}
+       i&&/\.coldboot_cal_mm = true/{sub(/true/,"false")}
+       i&&/\.coldboot_cal_ftm = true/{sub(/true/,"false");i=0}
+       {print}' "$ATH" > "$ATH.tmp" && mv "$ATH.tmp" "$ATH"
+  grep -n 'IPQ6018_HW10' -A25 "$ATH" | grep -E 'rxdma1_enable|coldboot_cal'
 else
   echo "⚠️ core.c not extracted yet (fine on first pass; re-run picks it up)"
 fi
 
+
 echo "=== ath11k: shrink DP RX ring sizes (RAM footprint) ==="
 DPH=$(find build_dir -path '*ath11k/dp.h' | head -1)
 if [ -n "$DPH" ]; then
-  sed -i -E 's/(#define[[:space:]]+DP_RXDMA_BUF_RING_SIZE[[:space:]]+)4096/\12048/' "$DPH"
-  sed -i -E 's/(#define[[:space:]]+DP_RXDMA_REFILL_RING_SIZE[[:space:]]+)2048/\11024/' "$DPH"
+  sed -i -E 's/(#define[[:space:]]+DP_RXDMA_BUF_RING_SIZE[[:space:]]+)[0-9]+/\11024/' "$DPH"
+  sed -i -E 's/(#define[[:space:]]+DP_RXDMA_REFILL_RING_SIZE[[:space:]]+)[0-9]+/\1512/' "$DPH"
   grep -E 'DP_RXDMA_(BUF|REFILL)_RING_SIZE' "$DPH"
-else
-  echo "⚠️ dp.h not extracted yet (re-run picks it up)"
-fi
-
-echo "=== ath11k: cut num_peers/num_vdevs on IPQ6018 (RAM) ==="
-CORE=$(find build_dir -path '*ath11k/core.c' | head -1)
-if [ -n "$CORE" ]; then
-  awk '/\.hw_rev = ATH11K_HW_IPQ6018_HW10/{i=1}
-       i&&/\.num_vdevs/{sub(/= *[0-9]+/,"= 8")}
-       i&&/\.num_peers/{sub(/= *[0-9]+/,"= 128");i=0}
-       {print}' "$CORE" > "$CORE.tmp" && mv "$CORE.tmp" "$CORE"
-  grep -nE '\.num_(vdevs|peers)' "$CORE" | head
 fi
 
 
@@ -167,7 +159,7 @@ sha=${SHA}
 run_id=${RUN}
 built_by=${BUILT_BY}
 built=$(date -u +%FT%TZ)
-notes="Shrunk DP RX rings, peers & vdevs, disabled NSS wifi, CMA children + 16M reserved-memory node @ 0x46000000"
+notes="Shrunk DP RX rings/4, disabled NSS wifi, CMA children + 24M reserved-memory node @ 0x46000000"
 EOF
 cat files/etc/build-id
 
