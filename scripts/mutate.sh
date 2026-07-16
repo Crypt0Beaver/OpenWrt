@@ -129,6 +129,27 @@ else
   echo "⚠️ core.c not extracted yet (fine on first pass; re-run picks it up)"
 fi
 
+echo "=== ath11k: shrink DP RX ring sizes (RAM footprint) ==="
+DPH=$(find build_dir -path '*ath11k/dp.h' | head -1)
+if [ -n "$DPH" ]; then
+  sed -i -E 's/(#define[[:space:]]+DP_RXDMA_BUF_RING_SIZE[[:space:]]+)4096/\12048/' "$DPH"
+  sed -i -E 's/(#define[[:space:]]+DP_RXDMA_REFILL_RING_SIZE[[:space:]]+)2048/\11024/' "$DPH"
+  grep -E 'DP_RXDMA_(BUF|REFILL)_RING_SIZE' "$DPH"
+else
+  echo "⚠️ dp.h not extracted yet (re-run picks it up)"
+fi
+
+echo "=== ath11k: cut num_peers/num_vdevs on IPQ6018 (RAM) ==="
+CORE=$(find build_dir -path '*ath11k/core.c' | head -1)
+if [ -n "$CORE" ]; then
+  awk '/\.hw_rev = ATH11K_HW_IPQ6018_HW10/{i=1}
+       i&&/\.num_vdevs/{sub(/= *[0-9]+/,"= 8")}
+       i&&/\.num_peers/{sub(/= *[0-9]+/,"= 128");i=0}
+       {print}' "$CORE" > "$CORE.tmp" && mv "$CORE.tmp" "$CORE"
+  grep -nE '\.num_(vdevs|peers)' "$CORE" | head
+fi
+
+
 echo "=== stamp build-id ==="
 SHA=$(git -C . rev-parse --short HEAD 2>/dev/null || echo "nogit")
 if [ -n "$GITHUB_ACTIONS" ]; then
@@ -146,6 +167,7 @@ sha=${SHA}
 run_id=${RUN}
 built_by=${BUILT_BY}
 built=$(date -u +%FT%TZ)
+notes="Shrunk DP RX rings, peers & vdevs, disabled NSS wifi, CMA children + 16M reserved-memory node @ 0x46000000"
 EOF
 cat files/etc/build-id
 
