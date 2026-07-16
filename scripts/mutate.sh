@@ -12,11 +12,11 @@ echo "=== load seed config ($CONFIG_FILE) ==="
 test -f "$CONFIG_FILE" || { echo "::error::config not found: $CONFIG_FILE"; exit 1; }
 cp "$CONFIG_FILE" .config
 
-echo "=== strip -Werror from qca-nss-drv ==="
-for f in $(grep -rl 'Werror' package/qca-nss/qca-nss-drv/ feeds/*/qca-nss/qca-nss-drv/ 2>/dev/null); do
-  echo "de-Werror: $f"; sed -i 's/-Werror[^ ]*//g' "$f"
-done
-find build_dir -path '*qca-nss-drv*' -name 'Makefile*' -exec sed -i 's/-Werror[^ ]*//g' {} \; 2>/dev/null || true
+# echo "=== strip -Werror from qca-nss-drv ==="
+# for f in $(grep -rl 'Werror' package/qca-nss/qca-nss-drv/ feeds/*/qca-nss/qca-nss-drv/ 2>/dev/null); do
+#   echo "de-Werror: $f"; sed -i 's/-Werror[^ ]*//g' "$f"
+# done
+# find build_dir -path '*qca-nss-drv*' -name 'Makefile*' -exec sed -i 's/-Werror[^ ]*//g' {} \; 2>/dev/null || true
 
 echo "=== kernel config: non-interactive skb frag ==="
 for f in target/linux/generic/config-*; do
@@ -43,11 +43,32 @@ for f in target/linux/generic/config-*; do
     '# CONFIG_CMA_SIZE_SEL_MIN is not set' \
     '# CONFIG_CMA_SIZE_SEL_MAX is not set' 'CONFIG_CMA_ALIGNMENT=8' >> "$f"
 done
+echo "=== CMA reserved-memory node (idempotent) ==="
 DTS=$(find target/linux -iname '*ax1800*.dts' | grep -vi 'gl-\|mt7621' | head -1)
 test -n "$DTS" || { echo "::error::AX1800 DTS not found"; exit 1; }
 echo "Patching DTS: $DTS"
 sed -i 's/ cma=[0-9]*M//g' "$DTS"
-grep -q wifi_cma "$DTS" || printf '\n/ {\n\treserved-memory {\n\t\twifi_cma: wifi_cma@46000000 {\n\t\t\tcompatible = "shared-dma-pool";\n\t\t\treusable;\n\t\t\tlinux,cma-default;\n\t\t\treg = <0x0 0x46000000 0x0 0x02000000>;\n\t\t};\n\t};\n};\n' >> "$DTS"
+# remove ANY previously-injected block (marker-delimited) so we never stack/keep stale nodes
+sed -i '/\/\* RM1800-CMA-BEGIN \*\//,/\/\* RM1800-CMA-END \*\//d' "$DTS"
+# also strip any bare wifi_cma node from older script versions (no marker)
+sed -i '/wifi_cma@[0-9a-f]* {/,/};/d' "$DTS"
+# add the current one, marker-wrapped
+cat >> "$DTS" <<'EOF'
+/* RM1800-CMA-BEGIN */
+/ {
+	reserved-memory {
+		wifi_cma: wifi_cma@46000000 {
+			compatible = "shared-dma-pool";
+			reusable;
+			linux,cma-default;
+			reg = <0x0 0x46000000 0x0 0x02000000>;
+		};
+	};
+};
+/* RM1800-CMA-END */
+EOF
+grep -A8 'RM1800-CMA-BEGIN' "$DTS"   # echo what actually landed
+make target/linux/clean 2>/dev/null || true
 
 echo "=== NSS: wifi-side off + pin mem profiles ==="
 sed -i '/CONFIG_ATH11K_NSS_SUPPORT/d; /CONFIG_NSS_DRV_WIFIOFFLOAD_ENABLE/d; /CONFIG_MAC80211_NSS_SUPPORT/d; /CONFIG_PACKAGE_kmod-qca-nss-drv-wifioffload/d; /CONFIG_IPQ_MEM_PROFILE/d; /CONFIG_ATH11K_MEM_PROFILE/d' .config
@@ -90,10 +111,11 @@ echo "✅ NSS trimmed (dp+drv kept for LAN)"
 
 echo "=== extract qca-nss-drv + delete dead function ==="
 make package/qca-nss/qca-nss-drv/{clean,prepare} V=s QUILT=1 2>/dev/null || true
-
-DRV=$(find build_dir -path '*qca-nss-drv*' -type d -name 'qca-nss-drv-*' | head -1)
-[ -n "$DRV" ] && [ -f "$DRV/nss_rps.c" ] && \
-  sed -i '/^static nss_tx_status_t nss_rps_ipv4_hash_bitmap_cfg/,/^}/d' "$DRV/nss_rps.c"
+SRC=$(find build_dir -path '*qca-nss-drv*' -name nss_rps.c | head -1)
+test -n "$SRC" || { echo "::error::nss_rps.c not found after prepare"; exit 1; }
+sed -i '/^static nss_tx_status_t nss_rps_ipv4_hash_bitmap_cfg/,/^}/d' "$SRC"
+grep -q 'nss_rps_ipv4_hash_bitmap_cfg' "$SRC" && { echo "::error::dead function still present"; } #exit 1;  }
+echo "✅ dead function removed from $SRC"
 
 
 echo "=== monitor rings off (IPQ6018) ==="
@@ -105,4 +127,25 @@ if [ -n "$ATH" ]; then
 else
   echo "⚠️ core.c not extracted yet (fine on first pass; re-run picks it up)"
 fi
+
+echo "=== stamp build-id ==="
+SHA=$(git -C . rev-parse --short HEAD 2>/dev/null || echo "nogit")
+if [ -n "$GITHUB_ACTIONS" ]; then
+  RUN="${GITHUB_RUN_ID}"
+  BUILT_BY="ci"
+else
+  RUN="local-$(date +%s)"
+  BUILT_BY="wsl-$(whoami)@$(hostname)"
+fi
+mkdir -p files/etc
+cat > files/etc/build-id <<EOF
+os=ImmortalWrt
+config=${CONFIG}
+sha=${SHA}
+run_id=${RUN}
+built_by=${BUILT_BY}
+built=$(date -u +%FT%TZ)
+EOF
+cat files/etc/build-id
+
 echo "=== mutate.sh done ==="
