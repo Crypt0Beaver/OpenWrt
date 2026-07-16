@@ -32,7 +32,7 @@ fi
 echo "=== neuter NSS mac80211 patches ==="
 rm -rf package/kernel/mac80211/patches/nss
 
-echo "=== CMA children + 24M reserved-memory node @ 0x46000000 ==="
+echo "=== CMA children + 16M reserved-memory node @ 0x46000000 ==="
 for f in target/linux/generic/config-*; do
   sed -i '/CONFIG_CMA[ =]/d; /CONFIG_CMA is not set/d; /CONFIG_CMA_/d; /CONFIG_DMA_CMA/d' "$f"
   printf '%s\n' 'CONFIG_CMA=y' 'CONFIG_DMA_CMA=y' \
@@ -61,7 +61,7 @@ cat >> "$DTS" <<'EOF'
 			compatible = "shared-dma-pool";
 			reusable;
 			linux,cma-default;
-			reg = <0x0 0x46000000 0x0 0x02000000>;
+			reg = <0x0 0x46000000 0x0 0x01000000>;
 		};
 	};
 };
@@ -80,43 +80,44 @@ printf '%s\n' \
   'CONFIG_IPQ_MEM_PROFILE_256=y' \
   'CONFIG_ATH11K_MEM_PROFILE_256M=y' >> .config
 
-echo "=== NSS dataplane trim (keep dp+drv+ssdk, drop ecm+submodules) ==="
+echo "=== NSS dataplane: standalone dp+ssdk, DROP drv/core/firmware ==="
 for f in target/linux/qualcommax/Makefile target/linux/qualcommax/image/Makefile target/linux/qualcommax/image/ipq60xx.mk; do
-  [ -f "$f" ] || continue
-  sed -i -E 's/\bkmod-qca-nss-ecm\b//g; s/\bkmod-qca-nss-drv-[a-z0-9-]+\b//g; s/\bkmod-qca-nss-crypto\b//g; s/\bqca-nss-(ecm|clients|crypto)\b//g' "$f"
+[ -f "$f" ] || continue
+ sed -i -E 's/\bkmod-qca-nss-drv\b//g; s/\bqca-nss-drv\b//g; s/\bnss-firmware-ipq60xx\b//g; s/\bkmod-qca-nss-ecm\b//g; s/\bkmod-qca-nss-drv-[a-z0-9-]+\b//g; s/\bkmod-qca-nss-crypto\b//g; s/\bqca-nss-(ecm|clients|crypto)\b//g' "$f"
 done
+# de-couple dp from drv → match mainline dep (@TARGET_qualcommax +kmod-qca-ssdk)
+for f in $(find package feeds -path '*qca-nss-dp/Makefile' 2>/dev/null); do
+ sed -i -E 's/\+kmod-qca-nss-drv//g; s/\+qca-nss-drv//g' "$f"
+done
+sed -i -E '/^CONFIG_PACKAGE_(kmod-)?qca-nss-drv([= ]|-)/d' .config
 sed -i -E '/^CONFIG_PACKAGE_kmod-qca-nss-ecm[= ]/d' .config
-sed -i -E '/^CONFIG_PACKAGE_kmod-qca-nss-drv-[a-z0-9-]+[= ]/d' .config
 sed -i -E '/^CONFIG_PACKAGE_kmod-qca-nss-crypto[= ]/d' .config
+sed -i -E '/^CONFIG_PACKAGE_nss-firmware-ipq60xx[= ]/d' .config
 printf '%s\n' \
-  'CONFIG_PACKAGE_kmod-qca-nss-drv=y' \
-  'CONFIG_PACKAGE_kmod-qca-nss-dp=y' \
-  'CONFIG_PACKAGE_kmod-qca-ssdk=y' \
-  '# CONFIG_PACKAGE_kmod-qca-nss-ecm is not set' >> .config
+ 'CONFIG_PACKAGE_kmod-qca-nss-dp=y' \
+ 'CONFIG_PACKAGE_kmod-qca-ssdk=y' \
+ '# CONFIG_PACKAGE_kmod-qca-nss-drv is not set' \
+ '# CONFIG_PACKAGE_qca-nss-drv is not set' \
+ '# CONFIG_PACKAGE_kmod-qca-nss-ecm is not set' \
+ '# CONFIG_PACKAGE_nss-firmware-ipq60xx is not set' >> .config
+
 
 echo "=== defconfig + NSS re-assert ==="
 make defconfig
 sed -i 's/^CONFIG_ATH11K_NSS_SUPPORT=y$/# CONFIG_ATH11K_NSS_SUPPORT is not set/' .config
 sed -i 's/^CONFIG_NSS_DRV_WIFIOFFLOAD_ENABLE=y$/# CONFIG_NSS_DRV_WIFIOFFLOAD_ENABLE is not set/' .config
 sed -i 's/^CONFIG_MAC80211_NSS_SUPPORT=y$/# CONFIG_MAC80211_NSS_SUPPORT is not set/' .config
-awk '/^CONFIG_PACKAGE_(kmod-)?qca-nss/ && !/kmod-qca-nss-(dp|drv)[= ]/ { sub(/=y/,""); print "# "$1" is not set"; next } {print}' .config > .config.tmp && mv .config.tmp .config
+awk '/^CONFIG_PACKAGE_(kmod-)?qca-nss/ && !/kmod-qca-nss-dp[= ]/ { sub(/=y/,""); print "# "$1" is not set"; next } {print}' .config > .config.tmp && mv .config.tmp .config
 make defconfig
 
 echo "=== NSS assertions ==="
 if grep -qE '^CONFIG_(ATH11K_NSS_SUPPORT|MAC80211_NSS_SUPPORT)=y' .config; then
   echo "::error::wifi NSS still enabled"; exit 1; fi
-if grep -E '^CONFIG_PACKAGE_(kmod-)?qca-nss' .config | grep -Eqv 'kmod-qca-nss-(dp|drv)=y'; then
-  echo "::error::unexpected NSS pkg:"; grep -E '^CONFIG_PACKAGE_(kmod-)?qca-nss' .config | grep -Ev 'kmod-qca-nss-(dp|drv)=y'; exit 1; fi
-echo "✅ NSS trimmed (dp+drv kept for LAN)"
-
-echo "=== extract qca-nss-drv + delete dead function ==="
-make package/qca-nss/qca-nss-drv/{clean,prepare} V=s QUILT=1 2>/dev/null || true
-SRC=$(find build_dir -path '*qca-nss-drv*' -name nss_rps.c | head -1)
-test -n "$SRC" || { echo "::error::nss_rps.c not found after prepare"; exit 1; }
-sed -i '/^static nss_tx_status_t nss_rps_ipv4_hash_bitmap_cfg/,/^}/d' "$SRC"
-grep -q 'nss_rps_ipv4_hash_bitmap_cfg' "$SRC" && { echo "::error::dead function still present"; } #exit 1;  }
-echo "✅ dead function removed from $SRC"
-
+if grep -qE '^CONFIG_PACKAGE_(kmod-)?qca-nss-drv=y' .config; then
+ echo "::error::qca-nss-drv still enabled after strip"; exit 1; fi
+if grep -E '^CONFIG_PACKAGE_(kmod-)?qca-nss' .config | grep -Eqv 'kmod-qca-nss-dp=y'; then
+ echo "::error::unexpected NSS pkg:"; grep -E '^CONFIG_PACKAGE_(kmod-)?qca-nss' .config | grep -Ev 'kmod-qca-nss-dp=y'; exit 1; fi
+echo "✅ NSS trimmed to standalone dp+ssdk (no drv/core)"
 
 echo "=== monitor rings off (IPQ6018) ==="
 make package/kernel/mac80211/{clean,prepare} V=s QUILT=1 2>/dev/null || true
