@@ -32,7 +32,7 @@ fi
 echo "=== neuter NSS mac80211 patches ==="
 rm -rf package/kernel/mac80211/patches/nss
 
-echo "=== CMA children + 24M reserved-memory node @ 0x46000000 ==="
+echo "=== CMA children + 16M reserved-memory node @ 0x46000000 ==="
 for f in target/linux/generic/config-*; do
   sed -i '/CONFIG_CMA[ =]/d; /CONFIG_CMA is not set/d; /CONFIG_CMA_/d; /CONFIG_DMA_CMA/d' "$f"
   printf '%s\n' 'CONFIG_CMA=y' 'CONFIG_DMA_CMA=y' \
@@ -61,7 +61,7 @@ cat >> "$DTS" <<'EOF'
 			compatible = "shared-dma-pool";
 			reusable;
 			linux,cma-default;
-			reg = <0x0 0x46000000 0x0 0x01800000>;
+			reg = <0x0 0x46000000 0x0 0x01000000>;
 		};
 	};
 };
@@ -159,7 +159,7 @@ sha=${SHA}
 run_id=${RUN}
 built_by=${BUILT_BY}
 built=$(date -u +%FT%TZ)
-notes="Shrunk DP RX rings/4, disabled NSS wifi, CMA children + 24M reserved-memory node @ 0x46000000"
+notes="ddwrt firmware - Shrunk DP RX rings/4, no coldboot cal, disabled NSS wifi, CMA children + 16M reserved-memory node @ 0x46000000"
 EOF
 cat files/etc/build-id
 
