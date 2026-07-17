@@ -18,10 +18,10 @@ cp "$CONFIG_FILE" .config
 # done
 # find build_dir -path '*qca-nss-drv*' -name 'Makefile*' -exec sed -i 's/-Werror[^ ]*//g' {} \; 2>/dev/null || true
 
-echo "=== kernel config: non-interactive skb frag ==="
-for f in target/linux/generic/config-*; do
-  echo '# CONFIG_ALLOC_SKB_PAGE_FRAG_DISABLE is not set' >> "$f"
-done
+# echo "=== kernel config: non-interactive skb frag ==="
+# for f in target/linux/generic/config-*; do
+#   echo '# CONFIG_ALLOC_SKB_PAGE_FRAG_DISABLE is not set' >> "$f"
+# done
 if [ -n "$GITHUB_ACTIONS" ]; then
   echo "CI detected → full target rebuild"
   rm -rf build_dir/target-*
@@ -119,27 +119,27 @@ if grep -E '^CONFIG_PACKAGE_(kmod-)?qca-nss' .config | grep -Eqv 'kmod-qca-nss-d
  echo "::error::unexpected NSS pkg:"; grep -E '^CONFIG_PACKAGE_(kmod-)?qca-nss' .config | grep -Ev 'kmod-qca-nss-dp=y'; exit 1; fi
 echo "✅ NSS trimmed to standalone dp+ssdk (no drv/core)"
 
-echo "=== ath11k IPQ6018: mon rings off + coldboot cal off ==="
-ATH=$(find build_dir -path '*ath11k/core.c' | head -1)
-if [ -n "$ATH" ]; then
-  awk '/\.hw_rev = ATH11K_HW_IPQ6018_HW10/{i=1}
-       i&&/\.rxdma1_enable = true/{sub(/true/,"false")}
-       i&&/\.coldboot_cal_mm = true/{sub(/true/,"false")}
-       i&&/\.coldboot_cal_ftm = true/{sub(/true/,"false");i=0}
-       {print}' "$ATH" > "$ATH.tmp" && mv "$ATH.tmp" "$ATH"
-  grep -n 'IPQ6018_HW10' -A25 "$ATH" | grep -E 'rxdma1_enable|coldboot_cal'
-else
-  echo "⚠️ core.c not extracted yet (fine on first pass; re-run picks it up)"
-fi
+# echo "=== ath11k IPQ6018: mon rings off + coldboot cal off ==="
+# ATH=$(find build_dir -path '*ath11k/core.c' | head -1)
+# if [ -n "$ATH" ]; then
+#   awk '/\.hw_rev = ATH11K_HW_IPQ6018_HW10/{i=1}
+#        i&&/\.rxdma1_enable = true/{sub(/true/,"false")}
+#        i&&/\.coldboot_cal_mm = true/{sub(/true/,"false")}
+#        i&&/\.coldboot_cal_ftm = true/{sub(/true/,"false");i=0}
+#        {print}' "$ATH" > "$ATH.tmp" && mv "$ATH.tmp" "$ATH"
+#   grep -n 'IPQ6018_HW10' -A25 "$ATH" | grep -E 'rxdma1_enable|coldboot_cal'
+# else
+#   echo "⚠️ core.c not extracted yet (fine on first pass; re-run picks it up)"
+# fi
 
 
-echo "=== ath11k: shrink DP RX ring sizes (RAM footprint) ==="
-DPH=$(find build_dir -path '*ath11k/dp.h' | head -1)
-if [ -n "$DPH" ]; then
-  sed -i -E 's/(#define[[:space:]]+DP_RXDMA_BUF_RING_SIZE[[:space:]]+)[0-9]+/\11024/' "$DPH"
-  sed -i -E 's/(#define[[:space:]]+DP_RXDMA_REFILL_RING_SIZE[[:space:]]+)[0-9]+/\1512/' "$DPH"
-  grep -E 'DP_RXDMA_(BUF|REFILL)_RING_SIZE' "$DPH"
-fi
+# echo "=== ath11k: shrink DP RX ring sizes (RAM footprint) ==="
+# DPH=$(find build_dir -path '*ath11k/dp.h' | head -1)
+# if [ -n "$DPH" ]; then
+#   sed -i -E 's/(#define[[:space:]]+DP_RXDMA_BUF_RING_SIZE[[:space:]]+)[0-9]+/\11024/' "$DPH"
+#   sed -i -E 's/(#define[[:space:]]+DP_RXDMA_REFILL_RING_SIZE[[:space:]]+)[0-9]+/\1512/' "$DPH"
+#   grep -E 'DP_RXDMA_(BUF|REFILL)_RING_SIZE' "$DPH"
+# fi
 
 
 echo "=== stamp build-id ==="
@@ -159,7 +159,7 @@ sha=${SHA}
 run_id=${RUN}
 built_by=${BUILT_BY}
 built=$(date -u +%FT%TZ)
-notes="ddwrt firmware - Shrunk DP RX rings/4, no coldboot cal, disabled NSS wifi, CMA children + 16M reserved-memory node @ 0x46000000"
+notes="2.12 ddwrt firmware (dual-radio fix); NSS wifi-off + standalone dp; CMA 16M @0x46000000; footprint trims removed"
 EOF
 cat files/etc/build-id
 
