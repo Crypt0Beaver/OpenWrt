@@ -51,10 +51,10 @@ else
   echo "local → keeping build_dir for incremental"
 fi
 
-if [ $NONSS = 1 ]; then
-  echo "=== neuter NSS mac80211 patches ==="
-  rm -rf package/kernel/mac80211/patches/nss
-fi
+# if [ $NONSS = 1 ]; then
+#   echo "=== neuter NSS mac80211 patches ==="
+#   rm -rf package/kernel/mac80211/patches/nss
+# fi
 
 CMA_SIZE=16
 # if [ $NONSS = 1 ]; then
@@ -128,13 +128,20 @@ if [ $NONSS = 1 ]; then
     '# CONFIG_NSS_DRV_WIFIOFFLOAD_ENABLE is not set' \
     '# CONFIG_MAC80211_NSS_SUPPORT is not set' \
     '# CONFIG_PACKAGE_kmod-qca-nss-drv-wifioffload is not set' >> .config
+else
+  echo "=== NSS: wifi-side ON"
+  printf '%s\n' \
+    'CONFIG_ATH11K_NSS_SUPPORT=y' \
+    'CONFIG_MAC80211_NSS_SUPPORT=y' \
+    'CONFIG_NSS_DRV_WIFIOFFLOAD_ENABLE=y' >> .config
+
 fi
 
-echo "=== Pin mem profiles ==="
-sed -i '/CONFIG_IPQ_MEM_PROFILE/d; /CONFIG_ATH11K_MEM_PROFILE/d' .config
-printf '%s\n' \
-  'CONFIG_IPQ_MEM_PROFILE_256=y' \
-  'CONFIG_ATH11K_MEM_PROFILE_256M=y' >> .config
+# echo "=== Pin mem profiles ==="
+# sed -i '/CONFIG_IPQ_MEM_PROFILE/d; /CONFIG_ATH11K_MEM_PROFILE/d' .config
+# printf '%s\n' \
+#   'CONFIG_IPQ_MEM_PROFILE_256=y' \
+#   'CONFIG_ATH11K_MEM_PROFILE_256M=y' >> .config
 
 if [ $NONSS = 1 ]; then
   echo "=== NSS dataplane: standalone dp+ssdk, DROP drv/core/firmware ==="
