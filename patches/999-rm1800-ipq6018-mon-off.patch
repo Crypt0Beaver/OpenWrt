@@ -1,0 +1,11 @@
+--- a/drivers/net/wireless/ath/ath11k/core.c
++++ b/drivers/net/wireless/ath/ath11k/core.c
+@@ -150,7 +150,7 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
+ 			.svc_to_ce_map_len = 19,
+ 			.ce_ie_addr = &ath11k_ce_ie_addr_ipq8074,
+ 			.single_pdev_only = false,
+-			.rxdma1_enable = true,
++			.rxdma1_enable = false,
+ 			.num_rxdma_per_pdev = 1,
+ 			.rx_mac_buf_ring = false,
+ 			.vdev_start_delay = false,
