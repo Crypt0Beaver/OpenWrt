@@ -9,6 +9,7 @@ CONFIG="${1:-rm1800-wifi}"
 CONFIG_FILE="${CONFIG_FILE:-configs/${CONFIG}.config}"
 MON_OFF_PATCH="${MON_OFF_PATCH:-patches/999-rm1800-ipq6018-mon-off.patch}"
 MON_OFF=0   # 0 = skip mon-off (test mode-2 alone first); 1 = apply the patch
+CMA_MAINSTREAM=1  # 0 = skip CMA reserved-memory node; 1 = inject it (idempotent)
 
 echo "=== load seed config ($CONFIG_FILE) ==="
 test -f "$CONFIG_FILE" || { echo "::error::config not found: $CONFIG_FILE"; exit 1; }
@@ -73,31 +74,60 @@ CMA_SIZE=16
       'CONFIG_CMA_ALIGNMENT=8' >> "$f"
   done
 
-  echo "=== CMA reserved-memory node (idempotent) ==="
-  DTS=$(find target/linux -iname '*ax1800*.dts' | grep -vi 'gl-\|mt7621' | head -1)
-  test -n "$DTS" || { echo "::error::AX1800 DTS not found"; exit 1; }
-  echo "Patching DTS: $DTS"
-  sed -i 's/ cma=[0-9]*M//g' "$DTS"
-  # remove ANY previously-injected block (marker-delimited) so we never stack/keep stale nodes
-  sed -i '/\/\* RM1800-CMA-BEGIN \*\//,/\/\* RM1800-CMA-END \*\//d' "$DTS"
-  # also strip any bare wifi_cma node from older script versions (no marker)
-  sed -i '/wifi_cma@[0-9a-f]* {/,/};/d' "$DTS"
-  # add the current one, marker-wrapped
-  cat >> "$DTS" <<'EOF'
+  if [ $CMA_MAINSTREAM = 0 ]; then
+    echo "=== CMA reserved-memory node (idempotent) ==="
+    DTS=$(find target/linux -iname '*ax1800*.dts' | grep -vi 'gl-\|mt7621' | head -1)
+    test -n "$DTS" || { echo "::error::AX1800 DTS not found"; exit 1; }
+    echo "Patching DTS: $DTS"
+    sed -i 's/ cma=[0-9]*M//g' "$DTS"
+    # remove ANY previously-injected block (marker-delimited) so we never stack/keep stale nodes
+    sed -i '/\/\* RM1800-CMA-BEGIN \*\//,/\/\* RM1800-CMA-END \*\//d' "$DTS"
+    # also strip any bare wifi_cma node from older script versions (no marker)
+    sed -i '/wifi_cma@[0-9a-f]* {/,/};/d' "$DTS"
+    # add the current one, marker-wrapped
+    cat >> "$DTS" <<'EOF'
 /* RM1800-CMA-BEGIN */
 / {
-	reserved-memory {
-		wifi_cma: wifi_cma@46000000 {
-			compatible = "shared-dma-pool";
-			reusable;
-			linux,cma-default;
-			reg = <0x0 0x46000000 0x0 0x01000000>;
-		};
-	};
+  reserved-memory {
+    wifi_cma: wifi_cma@46000000 {
+      compatible = "shared-dma-pool";
+      reusable;
+      linux,cma-default;
+      reg = <0x0 0x46000000 0x0 0x01000000>;
+    };
+  };
 };
 /* RM1800-CMA-END */
 EOF
-  grep -A8 'RM1800-CMA-BEGIN' "$DTS"   # echo what actually landed
+    grep -A8 'RM1800-CMA-BEGIN' "$DTS"   # echo what actually landed
+  else
+    echo "=== install upstream ipq6018 256M memory map (vendored @ pinned SHA) ==="
+    DTS_DIR=target/linux/qualcommax/files/arch/arm64/boot/dts/qcom
+    PATCH_DIR=$(dirname target/linux/qualcommax/patches-*/. | head -1)
+
+    # 1. drop in the matched 256M dtsi
+    install -m644 vendor/dts/ipq6018-256m.dtsi "$DTS_DIR/ipq6018-256m.dtsi"
+
+    # 2. drop in the memory-regions fix patch (pipeline applies it at prepare)
+    install -m644 vendor/patches/0911-arm64-dts-qcom-ipq6018-fix-memory-regions.patch "$PATCH_DIR/"
+
+    # 3. AX1800 DTS: include the 256M profile (idempotent) + force mode 2
+    MODE_DTS=$(find target/linux -iname 'ipq6000-ax1800.dts' | head -1)
+    test -n "$MODE_DTS" || { echo "::error::ax1800 dts not found"; exit 1; }
+    grep -q 'ipq6018-256m.dtsi' "$MODE_DTS" || sed -i '1a #include "ipq6018-256m.dtsi"' "$MODE_DTS"
+    sed -i 's/qcom,ath11k-fw-memory-mode = <[0-9]>;/qcom,ath11k-fw-memory-mode = <2>;/' "$MODE_DTS"
+
+    # 4. assert the map landed (fail loud, the saga lesson)
+    grep -q 'ipq6018-256m.dtsi' "$MODE_DTS" || { echo "::error::256m dtsi include missing"; exit 1; }
+    grep -q 'fw-memory-mode = <2>' "$MODE_DTS" || { echo "::error::fw mode not 2"; exit 1; }
+    test -f "$DTS_DIR/ipq6018-256m.dtsi" || { echo "::error::256m dtsi not installed"; exit 1; }
+    # make sure the OLD custom node is truly gone
+    ! grep -q 'wifi_cma@46000000' "$MODE_DTS" || { echo "::error::stale wifi_cma node still present"; exit 1; }
+
+    # 5. force DTB regen (your stale-cache lesson)
+    find build_dir -path '*linux-qualcommax*' -name '*ax1800*.dtb' -delete
+
+  fi
     # --- ath11k FW memory mode: force mode 1 (coldboot cal on) ---
   MODE_DTS=$(find target/linux -iname 'ipq6000-ax1800.dts' | head -1)
   sed -i "s/qcom,ath11k-fw-memory-mode = <[0-9]>;/qcom,ath11k-fw-memory-mode = <$DTS_MODE>;/" "$MODE_DTS"
@@ -316,7 +346,7 @@ sha=${SHA}
 run_id=${RUN}
 built_by=${BUILT_BY}
 built=$(date -u +%FT%TZ)
-notes="2.12 ddwrt firmware (dual-radio fix); No-NSS: $NONSS; CMA ${CMA_SIZE}M @0x46000000; DTS_Mode $DTS_MODE; Mon-off: $MON_OFF; No-Usb: $NO_USB; Rings shrunk: $RINGS_SHRINK"
+notes="2.12 ddwrt firmware; No-NSS: $NONSS; CMA Mainstream: $CMA_MAINSTREAM; CMA ${CMA_SIZE}M @0x46000000; DTS_Mode $DTS_MODE; Mon-off: $MON_OFF; No-Usb: $NO_USB; Rings shrunk: $RINGS_SHRINK"
 EOF
 cat files/etc/build-id
 
