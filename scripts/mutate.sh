@@ -8,6 +8,8 @@ CONFIG="${1:-rm1800-wifi}"
 # config file: CI passes configs/ in the workflow repo; locally symlinked into ./configs
 CONFIG_FILE="${CONFIG_FILE:-configs/${CONFIG}.config}"
 MON_OFF_PATCH="${MON_OFF_PATCH:-patches/999-rm1800-ipq6018-mon-off.patch}"
+RING_SHRINK_PATCH="${RING_SHRINK_PATCH:-patches/998-rm1800-rxdma-buf-2048.patch}"
+
 MON_OFF=0   # 0 = skip mon-off (test mode-2 alone first); 1 = apply the patch
 CMA_MAINSTREAM=1  # 0 = skip CMA reserved-memory node; 1 = inject it (idempotent)
 
@@ -16,7 +18,7 @@ test -f "$CONFIG_FILE" || { echo "::error::config not found: $CONFIG_FILE"; exit
 cp "$CONFIG_FILE" .config
 
 [ "$CONFIG" = "rm1800-wifi" ] && NONSS=1 || NONSS=0
-RINGS_SHRINK=0 # Shrunk doesn't seem to let the ath11k driver work (RX ring underflow). Keep at default 4096 for now.
+RINGS_SHRINK=1 # Shrunk doesn't seem to let the ath11k driver work (RX ring underflow). Keep at default 4096 for now.
 NO_USB=1
 DTS_MODE=2
 echo "No NSS: $NONSS; Rings shrunk: $RINGS_SHRINK; No USB: $NO_USB"
@@ -307,15 +309,15 @@ test -f files/etc/uci-defaults/99-rm1800-tuning || { echo "::error::tuning uci-d
 ls -la files/etc/uci-defaults/ files/etc/sysctl.d/
 
 
-if [ $RINGS_SHRINK = 1 ]; then
-  echo "=== ath11k: shrink DP RX ring sizes (RAM footprint) ==="
-  DPH=$(find build_dir -path '*ath11k/dp.h' | head -1)
-  if [ -n "$DPH" ]; then
-    sed -i -E 's/(#define[[:space:]]+DP_RXDMA_BUF_RING_SIZE[[:space:]]+)[0-9]+/\12048/' "$DPH"
-    sed -i -E 's/(#define[[:space:]]+DP_RXDMA_REFILL_RING_SIZE[[:space:]]+)[0-9]+/\11024/' "$DPH"
-    grep -E 'DP_RXDMA_(BUF|REFILL)_RING_SIZE' "$DPH"
-  fi
+DEST=package/kernel/mac80211/patches/ath11k
+rm -f "$DEST"/998-rm1800-rxdma-buf-2048.patch
+if [ "$RINGS_SHRINK" = 1 ]; then
+  echo "=== install rxdma-buf ring-shrink patch (4096→2048) ==="
+  test -f "$RING_SHRINK_PATCH" || { echo "::error::patch not found: $RING_SHRINK_PATCH"; exit 1; }
+  cp "$RING_SHRINK_PATCH" "$DEST/"
 fi
+
+
 
 echo "=== stamp build-id ==="
 SHA=$(git -C . rev-parse --short HEAD 2>/dev/null || echo "nogit")
@@ -334,7 +336,7 @@ sha=${SHA}
 run_id=${RUN}
 built_by=${BUILT_BY}
 built=$(date -u +%FT%TZ)
-notes="2.12 ddwrt firmware; No-NSS: $NONSS; CMA Mainstream: $CMA_MAINSTREAM; CMA ${CMA_SIZE}M @0x46000000; DTS_Mode $DTS_MODE; Mon-off: $MON_OFF; No-Usb: $NO_USB; Rings shrunk: $RINGS_SHRINK"
+notes="2.12 ddwrt firmware; No-NSS: $NONSS; CMA Mainstream: $CMA_MAINSTREAM$( ((!CMA_MAINSTREAM)) && echo "; CMA ${CMA_SIZE}M"); DTS_Mode $DTS_MODE; Mon-off: $MON_OFF; No-Usb: $NO_USB; Rings shrunk: $RINGS_SHRINK"
 EOF
 cat files/etc/build-id
 
