@@ -245,27 +245,28 @@ rm -f "$DEST"/999-rm1800-mon-off.patch
 if [ "$MON_OFF" = 1 ]; then
   echo "=== install mon-off patch (ipq6018 rxdma1_enable=false) ==="
   test -f "$MON_OFF_PATCH" || { echo "::error::patch not found: $MON_OFF_PATCH"; exit 1; }
-  cp "$MON_OFF_PATCH" "$DEST/"
+    cp "$MON_OFF_PATCH" "$DEST/"
+    
+  # make package/kernel/mac80211/prepare V=s
+  make package/kernel/mac80211/prepare V=s 2>&1 | grep -iE 'Applying|999-rm1800|\.rej|FAILED'
+  # want: "Applying .../999-rm1800-ipq6018-mon-off.patch"
+  # any ".rej" or "FAILED" = it didn't apply
+  find build_dir -name '*.rej' 2>/dev/null   # must be empty
+  grep -n -A25 '"ipq6018 hw1.0"' \
+    build_dir/target-*/linux-*/*/drivers/net/wireless/ath/ath11k/core.c \
+    | grep rxdma1_enable
+  # want: .rxdma1_enable = false   (this is the line-153 entry that was 'true')
+  find build_dir -path '*ath11k*' -name 'core.o' -newer \
+    package/kernel/mac80211/patches/ath11k/999-rm1800-ipq6018-mon-off.patch -print
+  # must print a path = object recompiled AFTER the patch. Empty = stale, run the clean/compile.
+
+  # make package/kernel/mac80211/{clean,compile} V=s
+  make package/kernel/mac80211/{compile} V=s
 else
   echo "=== mon-off DISABLED (testing fw-memory-mode alone) ==="
   rm -f "$DEST"/999-rm1800-ipq6018-mon-off.patch
 fi
 
-# make package/kernel/mac80211/prepare V=s
-make package/kernel/mac80211/prepare V=s 2>&1 | grep -iE 'Applying|999-rm1800|\.rej|FAILED'
-# want: "Applying .../999-rm1800-ipq6018-mon-off.patch"
-# any ".rej" or "FAILED" = it didn't apply
-find build_dir -name '*.rej' 2>/dev/null   # must be empty
-grep -n -A25 '"ipq6018 hw1.0"' \
-  build_dir/target-*/linux-*/*/drivers/net/wireless/ath/ath11k/core.c \
-  | grep rxdma1_enable
-# want: .rxdma1_enable = false   (this is the line-153 entry that was 'true')
-find build_dir -path '*ath11k*' -name 'core.o' -newer \
-  package/kernel/mac80211/patches/ath11k/999-rm1800-ipq6018-mon-off.patch -print
-# must print a path = object recompiled AFTER the patch. Empty = stale, run the clean/compile.
-
-# make package/kernel/mac80211/{clean,compile} V=s
-make package/kernel/mac80211/{compile} V=s
 
 echo "=== bake memory/perf tuning (uci-defaults) ==="
 mkdir -p files/etc/uci-defaults files/etc/sysctl.d
