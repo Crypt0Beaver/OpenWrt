@@ -6,9 +6,14 @@ set -e
 
 CONFIG="${1:-rm1800-wifi}"
 # config file: CI passes configs/ in the workflow repo; locally symlinked into ./configs
-CONFIG_FILE="${CONFIG_FILE:-configs/${CONFIG}.config}"
-MON_OFF_PATCH="${MON_OFF_PATCH:-patches/999-rm1800-ipq6018-mon-off.patch}"
-RING_SHRINK_PATCH="${RING_SHRINK_PATCH:-patches/998-rm1800-rxdma-buf-2048.patch}"
+# CONFIG_FILE="${CONFIG_FILE:-configs/${CONFIG}.config}"
+# MON_OFF_PATCH="${MON_OFF_PATCH:-patches/999-rm1800-ipq6018-mon-off.patch}"
+# RING_SHRINK_PATCH="${RING_SHRINK_PATCH:-patches/999-999-rm1800-rxdma-buf-2048.patch}"
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+CONFIG_FILE="${CONFIG_FILE:-$REPO_DIR/configs/${CONFIG}.config}"
+MON_OFF_PATCH="${MON_OFF_PATCH:-$REPO_DIR/patches/999-rm1800-ipq6018-mon-off.patch}"
+RING_SHRINK_PATCH="${RING_SHRINK_PATCH:-$REPO_DIR/patches/999-999-rm1800-rxdma-buf-2048.patch}"
 
 MON_OFF=0   # 0 = skip mon-off (test mode-2 alone first); 1 = apply the patch
 CMA_MAINSTREAM=1  # 0 = skip CMA reserved-memory node; 1 = inject it (idempotent)
@@ -215,36 +220,6 @@ if grep -E '^CONFIG_PACKAGE_kmod-usb[0-9a-z-]*=y' .config | grep -qvE 'kmod-usb-
   echo "::error::real USB kmod still enabled"; exit 1; fi
 
 
-# echo "=== ath11k IPQ6018: mon rings off + coldboot cal off ==="
-# ATH=$(find build_dir -path '*ath11k/core.c' | head -1)
-# if [ -n "$ATH" ]; then
-#   awk '/\.hw_rev = ATH11K_HW_IPQ6018_HW10/{i=1}
-#        i&&/\.rxdma1_enable = true/{sub(/true/,"false")}
-#        i&&/\.coldboot_cal_mm = true/{sub(/true/,"false")}
-#        i&&/\.coldboot_cal_ftm = true/{sub(/true/,"false");i=0}
-#        {print}' "$ATH" > "$ATH.tmp" && mv "$ATH.tmp" "$ATH"
-#   grep -n 'IPQ6018_HW10' -A25 "$ATH" | grep -E 'rxdma1_enable|coldboot_cal'
-# else
-#   echo "⚠️ core.c not extracted yet (fine on first pass; re-run picks it up)"
-# fi
-
-# echo "=== ath11k IPQ6018: mon rings off + coldboot cal off ==="
-# make package/kernel/mac80211/prepare V=s QUILT=0   # guarantee core.c is extracted
-# ATH=$(find build_dir -path '*ath11k/core.c' | head -1)
-# [ -n "$ATH" ] || { echo "::error::ath11k core.c not found after prepare"; exit 1; }
-
-# awk '/\.hw_rev = ATH11K_HW_IPQ6018_HW10/{i=1}
-#      i&&/\.rxdma1_enable = true/{sub(/true/,"false")}
-#      i&&/\.coldboot_cal_mm = true/{sub(/true/,"false")}
-#      i&&/\.coldboot_cal_ftm = true/{sub(/true/,"false");i=0}
-#      {print}' "$ATH" > "$ATH.tmp" && mv "$ATH.tmp" "$ATH"
-
-# # HARD verify — fail the build if mon-off didn't land
-# if grep -n -A25 'IPQ6018_HW10' "$ATH" | grep -q 'rxdma1_enable = true'; then
-#     echo "::error::rxdma1_enable still true — mon-off patch did NOT apply"; exit 1
-# fi
-# grep -n -A25 'IPQ6018_HW10' "$ATH" | grep -E 'rxdma1_enable|coldboot_cal'
-
 # TODO: remove the following once the above is stable and we can rely on defconfig to keep them off:
 # after `make defconfig`, assert removed pkgs stayed off:
 for s in ttyd libwebsockets-full freeradius3 wpad wpad-mini wpad-openssl \
@@ -258,6 +233,23 @@ for s in wpad-basic-mbedtls ddns-go miniupnpd-nftables luci-app-upnp; do
     && echo "OK  $s on" || echo "!!  $s missing"
 done
 
+if [ "$RINGS_SHRINK" = 1 ]; then
+  if [ $NONSS = 1 ]; then
+    echo "::error::ring-shrink context is tuned for the NSS series (post 999-233); regenerate for non-NSS"; exit 1
+  fi
+  RING_DEST=package/kernel/mac80211/patches/nss/ath11k
+  echo "=== install rxdma-buf ring-shrink patch (4096→2048) → $RING_DEST ==="
+  test -f "$RING_SHRINK_PATCH" || { echo "::error::patch not found: $RING_SHRINK_PATCH"; exit 1; }
+  find package/kernel/mac80211/patches -name '999-*rm1800-rxdma-buf-*.patch' -delete
+  cp "$RING_SHRINK_PATCH" "$RING_DEST/"
+  make package/kernel/mac80211/{clean,prepare} V=s
+  DPH=$(find build_dir -path '*mac80211-regular*ath11k/dp.h' | head -1)
+  test -n "$DPH" || { echo "::error::prepared dp.h not found"; exit 1; }
+  grep -qE '^#define DP_RXDMA_BUF_RING_SIZE[[:space:]]+2048' "$DPH" \
+    || { echo "::error::ring-shrink did NOT apply"; exit 1; }
+  if find build_dir -name '*.rej' | grep -q . ; then echo "::error::rejects:"; find build_dir -name '*.rej'; exit 1; fi
+  echo "OK ring-shrink 2048 landed at $DPH"
+fi
 
 DEST=package/kernel/mac80211/patches/ath11k
 # clear any stale auto-generated variant so we don't apply two
@@ -281,7 +273,7 @@ if [ "$MON_OFF" = 1 ]; then
   # must print a path = object recompiled AFTER the patch. Empty = stale, run the clean/compile.
 
   # make package/kernel/mac80211/{clean,compile} V=s
-  make package/kernel/mac80211/{compile} V=s
+  make package/kernel/mac80211/compile V=s
 else
   echo "=== mon-off DISABLED (testing fw-memory-mode alone) ==="
   rm -f "$DEST"/999-rm1800-ipq6018-mon-off.patch
@@ -307,16 +299,6 @@ EOF
 # verify it landed (fail loud if not — the saga lesson)
 test -f files/etc/uci-defaults/99-rm1800-tuning || { echo "::error::tuning uci-defaults missing"; exit 1; }
 ls -la files/etc/uci-defaults/ files/etc/sysctl.d/
-
-
-DEST=package/kernel/mac80211/patches/ath11k
-rm -f "$DEST"/998-rm1800-rxdma-buf-2048.patch
-if [ "$RINGS_SHRINK" = 1 ]; then
-  echo "=== install rxdma-buf ring-shrink patch (4096→2048) ==="
-  test -f "$RING_SHRINK_PATCH" || { echo "::error::patch not found: $RING_SHRINK_PATCH"; exit 1; }
-  cp "$RING_SHRINK_PATCH" "$DEST/"
-fi
-
 
 
 echo "=== stamp build-id ==="
