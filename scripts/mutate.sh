@@ -15,17 +15,19 @@ CONFIG_FILE="${CONFIG_FILE:-$REPO_DIR/configs/${CONFIG}.config}"
 MON_OFF_PATCH="${MON_OFF_PATCH:-$REPO_DIR/patches/999-rm1800-ipq6018-mon-off.patch}"
 RING_SHRINK_PATCH="${RING_SHRINK_PATCH:-$REPO_DIR/patches/999-999-rm1800-rxdma-buf-2048.patch}"
 
-MON_OFF=0   # 0 = skip mon-off (test mode-2 alone first); 1 = apply the patch
+MON_OFF=1   # 0 = skip mon-off (test mode-2 alone first); 1 = apply the patch
 CMA_MAINSTREAM=1  # 0 = skip CMA reserved-memory node; 1 = inject it (idempotent)
+ATH11K_MEM_PROFILE=512   # 256 or 512; 512 = upstream NSS default (ath.mk:76)
 
 echo "=== load seed config ($CONFIG_FILE) ==="
 test -f "$CONFIG_FILE" || { echo "::error::config not found: $CONFIG_FILE"; exit 1; }
 cp "$CONFIG_FILE" .config
 
 [ "$CONFIG" = "rm1800-wifi" ] && NONSS=1 || NONSS=0
-RINGS_SHRINK=1 # Shrunk doesn't seem to let the ath11k driver work (RX ring underflow). Keep at default 4096 for now.
+RINGS_SHRINK=0 # 512M profile already shrinks the rings; 1 = apply the 2048 patch (for 256M profile)
 NO_USB=1
 DTS_MODE=2
+PBUF_SHRINK=0  # 1 = apply the pbuf shrink (for ~148MB MemTotal); 0 = skip it
 echo "No NSS: $NONSS; Rings shrunk: $RINGS_SHRINK; No USB: $NO_USB"
 
 echo "=== strip -Werror from qca-nss-drv ==="
@@ -63,7 +65,15 @@ fi
 #   rm -rf package/kernel/mac80211/patches/nss
 # fi
 
-CMA_SIZE=16
+echo "=== switch board to 256m memory profile dtsi ==="
+XIAOMI_DTSI=target/linux/qualcommax/dts/ipq6000-xiaomi.dtsi
+test -f "$XIAOMI_DTSI" || { echo "::error::xiaomi dtsi not found"; exit 1; }
+git checkout -- "$XIAOMI_DTSI"
+sed -i 's|#include "ipq6018.dtsi"|#include "ipq6018-256m.dtsi"|' "$XIAOMI_DTSI"
+grep -n 'include "ipq6018' "$XIAOMI_DTSI"
+
+
+CMA_SIZE=0
 # if [ $NONSS = 1 ]; then
   echo "=== CMA children + ${CMA_SIZE}M reserved-memory node @ 0x46000000 ==="
   for f in target/linux/generic/config-*; do
@@ -233,6 +243,15 @@ for s in wpad-basic-mbedtls ddns-go miniupnpd-nftables luci-app-upnp; do
     && echo "OK  $s on" || echo "!!  $s missing"
 done
 
+echo "=== ath11k mem profile → ${ATH11K_MEM_PROFILE}M ==="
+ATH_MK=package/kernel/mac80211/ath.mk
+git checkout -- "$ATH_MK"          # reset to pristine so reruns can't stack
+if [ "$ATH11K_MEM_PROFILE" = 256 ]; then
+  sed -i 's/ATH11K_MEM_PROFILE_512M/ATH11K_MEM_PROFILE_256M/g' "$ATH_MK"
+fi
+grep -n 'ATH11K_MEM_PROFILE' "$ATH_MK" || true
+
+git checkout -- package/kernel/mac80211/patches/nss/
 if [ "$RINGS_SHRINK" = 1 ]; then
   if [ $NONSS = 1 ]; then
     echo "::error::ring-shrink context is tuned for the NSS series (post 999-233); regenerate for non-NSS"; exit 1
@@ -251,11 +270,12 @@ if [ "$RINGS_SHRINK" = 1 ]; then
   echo "OK ring-shrink 2048 landed at $DPH"
 fi
 
-DEST=package/kernel/mac80211/patches/ath11k
+DEST=package/kernel/mac80211/patches/nss/ath11k
 # clear any stale auto-generated variant so we don't apply two
-rm -f "$DEST"/999-rm1800-mon-off.patch
+rm -f "$DEST"/999-rm1800-ipq6018-mon-off.patch
 if [ "$MON_OFF" = 1 ]; then
   echo "=== install mon-off patch (ipq6018 rxdma1_enable=false) ==="
+  find package/kernel/mac80211/patches -name '999-*rm1800-*.patch' -delete
   test -f "$MON_OFF_PATCH" || { echo "::error::patch not found: $MON_OFF_PATCH"; exit 1; }
     cp "$MON_OFF_PATCH" "$DEST/"
     
@@ -263,21 +283,25 @@ if [ "$MON_OFF" = 1 ]; then
   make package/kernel/mac80211/prepare V=s 2>&1 | grep -iE 'Applying|999-rm1800|\.rej|FAILED'
   # want: "Applying .../999-rm1800-ipq6018-mon-off.patch"
   # any ".rej" or "FAILED" = it didn't apply
-  find build_dir -name '*.rej' 2>/dev/null   # must be empty
-  grep -n -A25 '"ipq6018 hw1.0"' \
-    build_dir/target-*/linux-*/*/drivers/net/wireless/ath/ath11k/core.c \
-    | grep rxdma1_enable
-  # want: .rxdma1_enable = false   (this is the line-153 entry that was 'true')
-  find build_dir -path '*ath11k*' -name 'core.o' -newer \
-    package/kernel/mac80211/patches/ath11k/999-rm1800-ipq6018-mon-off.patch -print
-  # must print a path = object recompiled AFTER the patch. Empty = stale, run the clean/compile.
-
-  # make package/kernel/mac80211/{clean,compile} V=s
+    CORE=$(find build_dir -path '*mac80211-regular*ath11k/core.c' | head -1)
+  test -n "$CORE" || { echo "::error::prepared core.c not found"; exit 1; }
+  grep -A60 'ipq6018 hw1\.0' "$CORE" | grep -q '\.rxdma1_enable = false,' \
+    || { echo "::error::mon-off did NOT apply"; exit 1; }
+  if find build_dir -name '*.rej' | grep -q . ; then echo "::error::rejects:"; find build_dir -name '*.rej'; exit 1; fi
+  echo "OK mon-off landed at $CORE"
   make package/kernel/mac80211/compile V=s
+
 else
   echo "=== mon-off DISABLED (testing fw-memory-mode alone) ==="
   rm -f "$DEST"/999-rm1800-ipq6018-mon-off.patch
 fi
+
+MCFG=$(find build_dir -path '*mac80211-regular*/backports-*/.config' | head -1)
+test -n "$MCFG" || { echo "::error::module .config not found"; exit 1; }
+grep -qE "^CPTCFG_ATH11K_MEM_PROFILE_${ATH11K_MEM_PROFILE}M=y" "$MCFG" \
+  || { echo "::error::mem profile ${ATH11K_MEM_PROFILE}M did NOT land:"; \
+       grep -E 'CPTCFG_ATH11K_MEM_PROFILE' "$MCFG" || true; exit 1; }
+echo "OK ath11k mem profile ${ATH11K_MEM_PROFILE}M"
 
 
 echo "=== bake memory/perf tuning (uci-defaults) ==="
@@ -300,6 +324,31 @@ EOF
 test -f files/etc/uci-defaults/99-rm1800-tuning || { echo "::error::tuning uci-defaults missing"; exit 1; }
 ls -la files/etc/uci-defaults/ files/etc/sysctl.d/
 
+echo "=== bake VM watermark tuning (sysctl.d) ==="
+mkdir -p files/etc/sysctl.d
+cat > files/etc/sysctl.d/12-rm1800-vm.conf <<'EOF'
+vm.min_free_kbytes=4096
+vm.watermark_boost_factor=0
+EOF
+test -s files/etc/sysctl.d/12-rm1800-vm.conf || { echo "::error::vm sysctl.d missing"; exit 1; }
+
+PBUF_INIT=$(find package feeds -path '*qca-nss-pbuf*' -name '*.init' 2>/dev/null | head -1)
+git checkout -- "$PBUF_INIT" 2>/dev/null || true
+if [ $PBUF_SHRINK = 1 ]; then
+  echo "=== NSS pbuf tier for ~148MB MemTotal ==="
+  test -n "$PBUF_INIT" || { echo "::error::qca-nss-pbuf init not found"; exit 1; }
+  echo "Patching: $PBUF_INIT"
+  # sed -i -e 's/n2h_wifi_pool_buf=8192/n2h_wifi_pool_buf=2048/' \
+  #       -e 's/n2h_high_water_core0=16384/n2h_high_water_core0=4096/' \
+  #       -e 's/extra_pbuf_core0=4000000/extra_pbuf_core0=1000000/' "$PBUF_INIT"
+  sed -i -e 's/n2h_wifi_pool_buf=8192/n2h_wifi_pool_buf=4096/' \
+       -e 's/n2h_high_water_core0=16384/n2h_high_water_core0=8192/' \
+       "$PBUF_INIT"
+  # leaving extra_pbuf_core0=4000000 at stock
+
+  grep -nE 'n2h_wifi_pool_buf=|n2h_high_water_core0=|extra_pbuf_core0=' "$PBUF_INIT"
+fi
+
 
 echo "=== stamp build-id ==="
 SHA=$(git -C . rev-parse --short HEAD 2>/dev/null || echo "nogit")
@@ -318,7 +367,16 @@ sha=${SHA}
 run_id=${RUN}
 built_by=${BUILT_BY}
 built=$(date -u +%FT%TZ)
-notes="2.12 ddwrt firmware; No-NSS: $NONSS; CMA Mainstream: $CMA_MAINSTREAM$( ((!CMA_MAINSTREAM)) && echo "; CMA ${CMA_SIZE}M"); DTS_Mode $DTS_MODE; Mon-off: $MON_OFF; No-Usb: $NO_USB; Rings shrunk: $RINGS_SHRINK"
+No-NSS=${NONSS}
+CMA Mainstream=${CMA_MAINSTREAM}
+CMA=${CMA_SIZE}M
+DTS_Mode=${DTS_MODE}
+Mem profile=${ATH11K_MEM_PROFILE}M
+Mon-off=${MON_OFF}
+No-Usb=${NO_USB}
+Rings shrunk=${RINGS_SHRINK}
+Pbuf shrink=${PBUF_SHRINK}
+notes="2.12 ddwrt firmware; VmMinFree: 4M; Dtsi 256M"
 EOF
 cat files/etc/build-id
 
