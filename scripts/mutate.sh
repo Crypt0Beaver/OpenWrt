@@ -376,7 +376,7 @@ Mon-off=${MON_OFF}
 No-Usb=${NO_USB}
 Rings shrunk=${RINGS_SHRINK}
 Pbuf shrink=${PBUF_SHRINK}
-notes="2.12 ddwrt firmware; VmMinFree: 4M; Dtsi 256M"
+notes="2.12 ddwrt firmware; VmMinFree: 4M; Dtsi 256M; mdns"
 EOF
 cat files/etc/build-id
 
