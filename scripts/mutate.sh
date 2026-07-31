@@ -289,7 +289,7 @@ if [ "$MON_OFF" = 1 ]; then
     || { echo "::error::mon-off did NOT apply"; exit 1; }
   if find build_dir -name '*.rej' | grep -q . ; then echo "::error::rejects:"; find build_dir -name '*.rej'; exit 1; fi
   echo "OK mon-off landed at $CORE"
-  make package/kernel/mac80211/compile V=s
+  # make package/kernel/mac80211/compile V=s
 
 else
   echo "=== mon-off DISABLED (testing fw-memory-mode alone) ==="
@@ -376,7 +376,7 @@ Mon-off=${MON_OFF}
 No-Usb=${NO_USB}
 Rings shrunk=${RINGS_SHRINK}
 Pbuf shrink=${PBUF_SHRINK}
-notes="2.12 ddwrt firmware; VmMinFree: 4M; Dtsi 256M; mdns"
+notes="2.12 ddwrt firmware; VmMinFree: 4M; Dtsi 256M; mdns; ddns-scripts"
 EOF
 cat files/etc/build-id
 
